@@ -169,6 +169,15 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 .tabs > tab-header.tg-needs-you > .name { font-weight: 700; }
 .tabs > tab-header.tg-needs-you .tg-cwd { font-weight: normal; }
 .tg-roll { color: #86b7f7; }
+/* A Claude tab that waits on a question or a permission: an amber badge on the icon, above the "needs you" dot. */
+.tg-icon.tg-ask::before {
+    content: '?'; position: absolute; top: -5px; right: -6px; width: 12px; height: 12px; border-radius: 50%; background: #f5b54a;
+    color: #111; font-size: 9px; font-weight: 800; line-height: 12px; text-align: center; box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
+}
+.tg-icon.tg-ask[data-ask="permission"]::before { content: '!'; }
+.tabs > tab-header.tg-asking > .name { font-weight: 700; }
+.tabs > tab-header.tg-asking .tg-cwd { font-weight: normal; }
+.tg-roll-ask { color: #f5b54a; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */
 .tabs-on-left .tabs > tab-header > .pin-indicator, .tabs-on-right .tabs > tab-header > .pin-indicator { margin: 0 0 0 10px !important; align-self: center; color: #d0d0d0 !important; opacity: 1 !important; }
 .tabs-on-left .tabs > tab-header > .pin-indicator + .name, .tabs-on-right .tabs > tab-header > .pin-indicator + .name { margin-left: 10px; }
@@ -496,6 +505,7 @@ function install (injector) {
             parent: g.parent,
             tabs: members(g.name).map(t => ({ title: titleOf(t), index: app.tabs.indexOf(t) })),
             needsYou: subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length,
+            asking: subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length,
             busy: subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy').length,
             first: app.tabs.indexOf(subtree(g.name)[0]),
         })).sort((a, b) => a.first - b.first).map(({ first, ...g }) => g)
@@ -916,6 +926,10 @@ function install (injector) {
         const needs = subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length
         const busy = subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy').length
         const roll = [needs && `${needs} ${needs === 1 ? 'needs' : 'need'} you`, busy && `${busy} busy`].filter(Boolean).join(' · ')
+        const asks = subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length
+        if (asks) {
+            countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-ask', textContent: `${asks} asking` }))
+        }
         if (roll) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll', textContent: roll }))
         }
@@ -1418,7 +1432,12 @@ function install (injector) {
         updateAgent(term)
         // What to type after a restart to bring this session back; kept only while Claude or Codex runs.
         if (procs.length && !info.resumePending) {
-            info.resume = resumeCommand(app, appProc?.raw, app === 'claude' ? claudeSessionId(appProc.pid) : null)
+            const sessionId = app === 'claude' ? claudeSessionId(appProc.pid) : null
+            info.resume = resumeCommand(app, appProc?.raw, sessionId)
+            if (sessionId !== (info.sessionId ?? null)) {
+                info.sessionId = sessionId
+                setAsking(term, sessionId ? readAsking(sessionId) : null)
+            }
         }
 
         // The OS knows the real folder of an app, of cmd, and of a macOS or Linux shell. PowerShell and Git Bash on Windows
@@ -1511,9 +1530,40 @@ function install (injector) {
             return
         }
         const t = top(term)
-        info.agent = state && { state, since: Date.now(), needsYou: state === 'waiting' && prev?.state === 'busy' && !lookedAt(t) }
+        info.agent = state && { state, since: Date.now(), needsYou: state === 'waiting' && prev?.state === 'busy' && !lookedAt(t), asking: info.asking ?? null }
         syncAgent(t)
     }
+    /*
+     * "Asking": the tabby-groups Claude plugin's hooks write <config>/tabby-groups/asking/<session id>.json while Claude
+     * waits on a question (AskUserQuestion) or a permission, and remove it when that is over. A pane knows its session id
+     * from Claude's own sessions/<pid>.json, so the file maps to the pane; the folder is watched, not polled.
+     */
+    const askingDir = require('path').join(process.env.CLAUDE_CONFIG_DIR || require('path').join(require('os').homedir(), '.claude'), 'tabby-groups', 'asking')
+    function readAsking (sessionId) {
+        try {
+            const a = JSON.parse(require('fs').readFileSync(require('path').join(askingDir, sessionId + '.json'), 'utf8'))
+            return ['question', 'permission'].includes(a.kind) ? { kind: a.kind, since: a.since } : null
+        } catch {
+            return null
+        }
+    }
+    function setAsking (pane, asking) {
+        const info = pane.__tgInfo
+        if (!info || JSON.stringify(info.asking ?? null) === JSON.stringify(asking)) {
+            return
+        }
+        info.asking = asking
+        info.agent = info.agent ? { ...info.agent, asking } : asking && { state: 'waiting', since: asking.since, needsYou: false, asking }
+        syncAgent(top(pane))
+    }
+    let askingWatch = null
+    try {
+        require('fs').mkdirSync(askingDir, { recursive: true })
+        askingWatch = require('fs').watch(askingDir, (event, file) => {
+            const id = file?.replace(/\.json$/, '')
+            app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => id && p.__tgInfo?.sessionId === id).forEach(p => setAsking(p, readAsking(id)))
+        })
+    } catch { }
     /** The top tab's agent: busy if any pane works, needs you if any pane does. Emits tabby-groups:agent. */
     function syncAgent (t) {
         const panes = (t.getAllTabs?.() ?? [t]).map(p => p.__tgInfo?.agent).filter(Boolean)
@@ -1522,6 +1572,7 @@ function install (injector) {
             state: busy.length ? 'busy' : 'waiting',
             since: Math.max(...(busy.length ? busy : panes).map(a => a.since)),
             needsYou: panes.some(a => a.needsYou),
+            asking: panes.find(a => a.asking)?.asking ?? null,
         } : null
         // A split tab keeps the roll-up of its panes; a single pane already holds its own.
         if (!(t.getAllTabs?.() ?? [t]).includes(t)) {
@@ -1647,9 +1698,15 @@ function install (injector) {
             iconEl?.remove()
         }
         const agent = tab.__tgInfo?.agent ?? info?.agent
+        const asking = agent?.asking?.kind
         iconEl?.classList.toggle('tg-busy', agent?.state === 'busy')
-        iconEl?.classList.toggle('tg-needs', !!agent?.needsYou)
+        iconEl?.classList.toggle('tg-needs', !!agent?.needsYou && !asking)
+        iconEl?.classList.toggle('tg-ask', !!asking)
+        if (iconEl) {
+            asking ? iconEl.dataset.ask = asking : delete iconEl.dataset.ask
+        }
         el.classList.toggle('tg-needs-you', !!agent?.needsYou)
+        el.classList.toggle('tg-asking', !!asking)
         // A tab pinned inside its group shows a pin where Tabby shows its own (between the number and the icon).
         let pinEl = el.querySelector(':scope > .tg-tab-pin')
         if (tab.__tgPinned && tab.__tg) {
@@ -2045,6 +2102,7 @@ function install (injector) {
         hideTip()
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
+        askingWatch?.close()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
         if (i >= 0) {

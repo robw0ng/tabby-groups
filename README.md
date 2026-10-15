@@ -17,7 +17,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | New tab | Double-click empty space, or click a group's +, to open a tab in that group |
 | Session icons | Claude Code, Codex, Gemini, Node, Python, Docker, Vim, SSH, PowerShell, cmd, Bash, WSL and more |
 | Folder line | Each tab shows its current folder under its title |
-| Claude Code state | A ring while Claude works; a dot when it finished while you were away. Group headers count both. |
+| Claude Code state | A ring while Claude works; a dot when it finished while you were away; an amber "?" while it asks you a question and "!" while it asks for a permission (needs the Claude Code plugin's hooks). Group headers count all of them. |
 | Search | Matches titles, group names, folders, apps and tab numbers (`#12`). Enter opens the first match. |
 | Pins | A pinned group goes first in its scope; a tab pinned in a group goes first in that group |
 | Resize | Drag the side bar's inner edge |
