@@ -156,6 +156,7 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 /* Session icon before the title, and the shell's folder as a second line in the side tab bar. */
 /* Tabby gives the title a 10px margin only right after the number, so the icon brings its own 10px on each side. */
 .tg-icon { flex: none; display: flex; align-self: center; width: 14px; height: 14px; margin: 0 10px; position: relative; }
+.tg-icon > .tg-emoji { font-size: 12px; line-height: 14px; width: 14px; text-align: center; font-variant-emoji: emoji; }
 /* A Claude tab at work turns a ring around its icon; one that finished while nobody looked gets a dot and a bold title. */
 .tg-icon.tg-busy::after {
     content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; border-top-color: #86b7f7;
@@ -816,7 +817,7 @@ function install (injector) {
         const words = q.split(/\s+/).filter(Boolean)
         const matches = tab => {
             const info = (tab.getFocusedTab?.() ?? tab.getAllTabs?.()[0] ?? tab).__tgInfo
-            const text = [titleOf(tab), ...chainOf(tab.__tg).map(g => g.name), info?.cwd, info?.kind, ICONS[info?.kind]?.label]
+            const text = [titleOf(tab), ...chainOf(tab.__tg).map(g => g.name), info?.cwd, info?.kind, iconOf(info?.kind)?.label]
                 .filter(Boolean).join('\n').toLowerCase()
             const number = String(app.tabs.indexOf(tab) + 1)
             return words.every(w => text.includes(w) || w.replace(/^#/, '') === number)
@@ -1392,8 +1393,76 @@ function install (injector) {
     // Claude Code prefixes its title with ✳ when idle and a spinner (braille dots or ◐◑◒◓) while busy;
     // this catches it when the process tree is unavailable.
     const CLAUDE_TITLE = /^[⠀-⣿✳✻✽✶✢◐◑◒◓]/
-    // Launchpad titles: "◌ launchpad", "🟢 3 running · launchpad", "✅ done · launchpad".
-    const LAUNCHPAD_TITLE = /(^|· |\s)launchpad$/i
+    /*
+     * The user's own icons: <Tabby settings folder>/tabby-groups.json, { "icons": [{ "name", "title"?, "process"?, "color"?,
+     * "emoji" | "path" | "paths", "stroke"? }] }. "title" is a pattern for the tab title, "process" one for a command line
+     * under the tab; the first rule that matches wins over the built-in icons. The file is watched, so edits apply at once.
+     */
+    const userIconsFile = (() => {
+        try {
+            return require('path').join(injector.get(core.BOOTSTRAP_DATA).userPluginsPath, '..', 'tabby-groups.json')
+        } catch {
+            return null
+        }
+    })()
+    let userIcons = []
+    function loadUserIcons () {
+        let rules = []
+        try {
+            rules = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8')).icons ?? []
+        } catch (e) {
+            if (e.code !== 'ENOENT') {
+                console.warn('tabby-groups: cannot read', userIconsFile, e.message)
+            }
+        }
+        userIcons = rules.flatMap(r => {
+            try {
+                if (!r.name || !(r.title || r.process) || !(r.emoji || r.path || r.paths)) {
+                    throw new Error('needs name, title or process, and emoji, path or paths')
+                }
+                return [{
+                    kind: 'user:' + r.name, label: r.name, color: r.color ?? '#d0d0d0', emoji: r.emoji, path: r.path, paths: r.paths,
+                    stroke: !!r.stroke, title: r.title ? new RegExp(r.title, 'i') : null, process: r.process ? new RegExp(r.process, 'i') : null,
+                }]
+            } catch (e) {
+                console.warn('tabby-groups: icon rule skipped', r?.name, e.message)
+                return []
+            }
+        })
+        userIconsVersion++
+        app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => p.__tgInfo).forEach(p => queueInspect(p, 100))
+    }
+    let userIconsVersion = 0
+    let userIconsWatch = null
+    const iconOf = kind => ICONS[kind] ?? userIcons.find(u => u.kind === kind)
+    /** An icon as DOM nodes (never markup), so a value from the user's file cannot inject anything. */
+    function drawIcon (icon) {
+        if (icon.emoji) {
+            return Object.assign(document.createElement('span'), { className: 'tg-emoji', textContent: icon.emoji })
+        }
+        const NS = 'http://www.w3.org/2000/svg'
+        const svg = document.createElementNS(NS, 'svg')
+        svg.setAttribute('viewBox', '0 0 24 24')
+        if (icon.stroke) {
+            Object.entries({ fill: 'none', stroke: icon.color, 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+                .forEach(([k, v]) => svg.setAttribute(k, v))
+        }
+        for (const d of icon.paths ?? [icon.path]) {
+            const path = document.createElementNS(NS, 'path')
+            path.setAttribute('d', d)
+            if (!icon.stroke) {
+                path.setAttribute('fill', icon.color)
+            }
+            svg.append(path)
+        }
+        return svg
+    }
+    if (userIconsFile) {
+        loadUserIcons()
+        try {
+            userIconsWatch = require('fs').watch(require('path').dirname(userIconsFile), (event, file) => file === 'tabby-groups.json' && loadUserIcons())
+        } catch { }
+    }
     const shellOf = command => SHELLS[(command ?? '').split(/[\\/]/).pop().toLowerCase()] ?? null
     const profileKind = term => term.profile?.type === 'ssh' ? 'ssh' : shellOf(term.profile?.options?.command)
 
@@ -1424,11 +1493,10 @@ function install (injector) {
         const [app, appProc] = APPS.map(([kind, test]) => [kind, procs.slice(1).find(test)]).find(([, p]) => p) ?? []
         const shellProc = procs.filter(p => SHELLS[p.name]).pop()
         const shell = SHELLS[shellProc?.name]
-        // Launchpad runs as a script inside the tab's own pwsh, so only its title (or a direct launch) gives it away.
-        const launchpad = LAUNCHPAD_TITLE.test(term.title ?? '') || procs.some(p => p.cmd.includes('launchpad\\launchpad.ps1'))
+        const user = userIcons.find(u => u.title?.test(term.title ?? '') || (u.process && procs.slice(1).some(p => u.process.test(p.raw))))
         // The Claude title is only a fallback without a process list: Tabby restores an old title ("✳ …") with a fresh shell.
         const claudeByTitle = !procs.length && CLAUDE_TITLE.test(term.title ?? '')
-        info.kind = (launchpad ? 'launchpad' : null) ?? app ?? (claudeByTitle ? 'claude' : null) ?? shell ?? profileKind(term)
+        info.kind = user?.kind ?? app ?? (claudeByTitle ? 'claude' : null) ?? shell ?? profileKind(term)
         updateAgent(term)
         // What to type after a restart to bring this session back; kept only while Claude or Codex runs.
         if (procs.length && !info.resumePending) {
@@ -1681,7 +1749,7 @@ function install (injector) {
             return
         }
         const info = (tab.getFocusedTab?.() ?? tab.getAllTabs?.()[0] ?? tab).__tgInfo
-        const icon = ICONS[info?.kind]
+        const icon = iconOf(info?.kind)
         let iconEl = el.querySelector(':scope > .tg-icon')
         if (icon) {
             if (!iconEl) {
@@ -1689,11 +1757,10 @@ function install (injector) {
                 iconEl.className = 'tg-icon'
                 name.before(iconEl)
             }
-            if (iconEl.dataset.kind !== info.kind) {
-                iconEl.dataset.kind = info.kind
-                iconEl.innerHTML = icon.stroke
-                    ? `<svg viewBox="0 0 24 24" fill="none" stroke="${icon.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.paths.map(d => `<path d="${d}"/>`).join('')}</svg>`
-                    : `<svg viewBox="0 0 24 24"><path fill="${icon.color}" d="${icon.path}"/></svg>`
+            const stamp = info.kind + '#' + userIconsVersion
+            if (iconEl.dataset.kind !== stamp) {
+                iconEl.dataset.kind = stamp
+                iconEl.replaceChildren(drawIcon(icon))
             }
         } else {
             iconEl?.remove()
@@ -2104,6 +2171,7 @@ function install (injector) {
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
         askingWatch?.close()
+        userIconsWatch?.close()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
         if (i >= 0) {
@@ -2184,7 +2252,9 @@ function install (injector) {
         })
     }
 
-    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, dispose }
+    /** The user's icons from tabby-groups.json (tab kind "user:<name>"), for other front ends such as a phone side bar. */
+    const icons = () => userIcons.map(({ title, process, ...icon }) => icon)
+    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, dispose }
     return window.__tabbyGroups
 }
 
