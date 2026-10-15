@@ -1,0 +1,8 @@
+{
+  "name": "tabby-groups",
+  "version": "0.1.1",
+  "description": "Open, list and move Tabby tabs in tab groups from Claude Code.",
+  "author": {
+    "name": "Robert Wong"
+  }
+}

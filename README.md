@@ -23,23 +23,12 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 
 ## Install
 
-Needs Tabby 1.0. The plugin has no dependencies.
+Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe to run again:
 
-1. Close Tabby.
-2. Copy this repo's folder into Tabby's plugin folder as `node_modules/tabby-groups`, or install it there with npm:
-
-   | System | Plugin folder |
-   | --- | --- |
-   | Windows | `%APPDATA%\tabby\plugins` |
-   | macOS | `~/Library/Application Support/tabby/plugins` |
-   | Linux | `~/.config/tabby/plugins` |
-
-   ```sh
-   cd <plugin folder>
-   npm install <git URL of this repo>
-   ```
-
-3. Start Tabby, and set the tab position to Left or Right in **Settings > Appearance**.
+| Part | Does |
+| --- | --- |
+| Tabby plugin (repo root) | The groups in Tabby's side bar. Needs Tabby 1.0, no dependencies. |
+| Claude Code plugin (`claude/`) | A `tabby` skill and `scripts/tabby.mjs`, so Claude Code can open, list and move tabs in groups ("put these tabs in a group") |
 
 ## Use
 

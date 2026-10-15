@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "tabby-groups",
+  "description": "Tab groups in Tabby, driven from Claude Code.",
+  "owner": { "name": "Robert Wong" },
+  "plugins": [
+    {
+      "name": "tabby-groups",
+      "description": "Open, list and move Tabby tabs in tab groups from Claude Code.",
+      "source": "./claude",
+      "category": "productivity"
+    }
+  ]
+}
