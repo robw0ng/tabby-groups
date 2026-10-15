@@ -31,7 +31,7 @@ node <plugin>/scripts/tabby.mjs open --group "<group>" --name "<tab title>" --di
 | --- | --- |
 | `--run "<command>"` | Typed into the new shell once it is ready, for example `claude`, `claude --resume <name>` or `npm test`. Leave it out for a plain shell. |
 | `--parent "<group>"` | Makes `--group` a subgroup of this group |
-| `--file <launch.ps1>` | Runs a PowerShell launch script instead of a shell (launchers use this) |
+| `--file <script>` | Runs a launch script once in a new shell (launchers use this). A `.ps1` script runs in PowerShell 7; any other script is sourced in the default profile's shell, for example zsh on macOS. |
 | `--app claude` | With `--file`: the app names its own tab |
 
 The group is created when it does not exist. The shell is the user's Tabby default profile.
@@ -49,4 +49,4 @@ node <plugin>/scripts/tabby.mjs move --tab <number|title> --none
 
 - Do not close, restart or type into tabs the user did not ask about. A tab can hold another Claude session at work.
 - Groups, colours, collapse and pins persist through Tabby restarts. Renames, colours and collapse are in the group's right-click menu; tell the user that instead of guessing.
-- When `list` returns a plain list without `plugin: true`, the tabby-groups Tabby plugin is not installed: only `open --file` and `list` work.
+- When `list` returns a plain list without `plugin: true`, the tabby-groups Tabby plugin is not installed: only `list` and `open --file` with a `.ps1` script work.

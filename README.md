@@ -2,6 +2,8 @@
 
 Real tab groups for [Tabby](https://tabby.sh)'s side tab bar: nested, coloured, collapsible groups, with session icons, a folder line and search for every tab.
 
+It runs on Windows. macOS support is built in but untested on a real Mac.
+
 It works when Tabby's tabs are on the left or the right. With tabs on the top or the bottom, Tabby looks as usual and the groups wait until the tabs are back on the side.
 
 ## What you get

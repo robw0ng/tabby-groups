@@ -1,6 +1,8 @@
 # Install tabby-groups
 
-For an agent or a person. Every step is safe to run again. The commands are PowerShell, for Windows. On macOS or Linux, use the paths in the table in step 3.
+For an agent or a person. Every step is safe to run again. Each step has a Windows (PowerShell) and a macOS (zsh or bash) command.
+
+**macOS is untested on a real Mac.** The steps follow Tabby's and Electron's macOS conventions; report what differs.
 
 The repo has two parts:
 
@@ -16,20 +18,31 @@ Tabby 1.0, Node 22 or later, git, and Claude Code. The repo is private: `gh auth
 ## 1. Get the repo
 
 ```powershell
+# Windows
 $repo = 'C:\tabby-groups'
 if (Test-Path "$repo\.git") { git -C $repo pull --ff-only } else { git clone https://github.com/robw0ng/tabby-groups.git $repo }
 ```
 
+```sh
+# macOS
+repo="$HOME/tabby-groups"
+if [ -d "$repo/.git" ]; then git -C "$repo" pull --ff-only; else git clone https://github.com/robw0ng/tabby-groups.git "$repo"; fi
+```
+
 ## 2. Install the Claude Code plugin
 
-```powershell
-claude plugin marketplace add $repo        # "already" is fine
+The same on both systems (`$repo` from step 1):
+
+```sh
+claude plugin marketplace add "$repo"        # "already" is fine
 claude plugin marketplace update tabby-groups
 claude plugin install tabby-groups@tabby-groups
 claude plugin update tabby-groups@tabby-groups
 ```
 
 ## 3. Copy the Tabby plugin into Tabby
+
+Tabby loads plugins from `<its user data folder>/plugins/node_modules`:
 
 | System | Plugin folder |
 | --- | --- |
@@ -38,16 +51,25 @@ claude plugin update tabby-groups@tabby-groups
 | Linux | `~/.config/tabby/plugins/node_modules/tabby-groups` |
 
 ```powershell
+# Windows
 $dst = "$env:APPDATA\tabby\plugins\node_modules\tabby-groups"
 New-Item -ItemType Directory -Force $dst | Out-Null
 Copy-Item "$repo\index.js", "$repo\icons.js", "$repo\package.json" $dst -Force
 ```
 
-Copy only these three files. A link or a junction instead of a copy makes Tabby run the repo's working copy.
+```sh
+# macOS
+dst="$HOME/Library/Application Support/tabby/plugins/node_modules/tabby-groups"
+mkdir -p "$dst" && cp "$repo/index.js" "$repo/icons.js" "$repo/package.json" "$dst/"
+```
+
+Copy only these three files. A link instead of a copy makes Tabby run the repo's working copy.
 
 ## 4. Open Tabby's DevTools port
 
-`tabby.mjs` reaches Tabby through `--remote-debugging-port=9222`. This adds the flag to Tabby's shortcuts when it is missing:
+`tabby.mjs` reaches Tabby through `--remote-debugging-port=9222`. The port is open only to this computer (127.0.0.1), and any program on it can use the port to control Tabby.
+
+On Windows, this adds the flag to Tabby's shortcuts when it is missing:
 
 ```powershell
 $shell = New-Object -ComObject WScript.Shell
@@ -59,32 +81,59 @@ foreach ($l in $links) {
 }
 ```
 
-The port is open only to this PC (127.0.0.1), and any program on this PC can use it to control Tabby.
+On macOS, a Dock or Finder start passes no flags. This makes a small app, "Tabby (port 9222)", that starts Tabby with the flag. Keep it in the Dock instead of Tabby:
+
+```sh
+mkdir -p "$HOME/Applications"
+osacompile -o "$HOME/Applications/Tabby (port 9222).app" -e 'do shell script "open -a Tabby --args --remote-debugging-port=9222"'
+```
+
+The flag works only when Tabby starts. If Tabby already runs, quit it (Cmd+Q) first.
 
 ## 5. Restart Tabby, and set two settings
 
-Tabby loads the plugin at start. Ask the user to close Tabby and start it from a shortcut. Do not close it yourself: this session can run inside Tabby.
+Tabby loads the plugin at start. Ask the user to quit Tabby and start it as in step 4. Do not quit it yourself: this session can run inside Tabby.
 
 Then ask the user to set, in Tabby's **Settings**:
 
 | Setting | Value | Why |
 | --- | --- | --- |
 | Appearance > Tabs location | Left or Right | The groups show only in a side tab bar |
-| Terminal > Default profile | PowerShell Core (if PowerShell 7 is installed) | New tabs and resumed Claude Code tabs use this profile. Windows PowerShell 5.1 cannot read a PowerShell 7 profile. |
+| Terminal > Default profile | The shell the user's Claude setup expects | New tabs, and Claude Code tabs resumed after a restart, use this profile |
+
+For the default profile:
+- On Windows, PowerShell Core when PowerShell 7 is installed. Windows PowerShell 5.1 cannot read a PowerShell 7 profile.
+- On macOS, zsh, which is the system default, unless the user's tools need PowerShell 7.
 
 Do not edit Tabby's `config.yaml` while Tabby runs: Tabby overwrites it.
 
 ## 6. Verify
 
 ```powershell
+# Windows
 $path = (Get-Content "$env:USERPROFILE\.claude\plugins\installed_plugins.json" | ConvertFrom-Json).plugins.'tabby-groups@tabby-groups'[0].installPath
 node "$path\scripts\tabby.mjs" list
+```
+
+```sh
+# macOS
+plugin=$(node -e "console.log(require(process.env.HOME + '/.claude/plugins/installed_plugins.json').plugins['tabby-groups@tabby-groups'][0].installPath)")
+node "$plugin/scripts/tabby.mjs" list
 ```
 
 | Result | Meaning |
 | --- | --- |
 | JSON with `"plugin":true` | Done |
 | JSON list without `"plugin":true` | Tabby runs without the plugin: check step 3, then restart Tabby |
-| Exit code 2, "no DevTools port" | Tabby was not started from a shortcut with the flag: step 4, then restart Tabby |
+| Exit code 2, "no DevTools port" | Tabby was not started with the flag: step 4 |
 
-The Tabby side has its own check: `node "$repo\test-resume.js"` prints `all 12 passed`.
+The Tabby side has its own check: `node "$repo/test-resume.js"` prints `all … passed`.
+
+## What differs on macOS
+
+| Feature | macOS |
+| --- | --- |
+| Session icons and folder line | From `ps` and `lsof`, instead of Windows' process API |
+| Claude Code resume after a restart | Typed into the default profile's shell, with POSIX quoting |
+| Launch scripts (`tabby.mjs open --file`) | A `.ps1` script needs PowerShell 7 (`pwsh`); any other script is sourced in the default shell |
+| Window buttons | The traffic lights sit top left; with tabs on the left, the side bar starts below them |

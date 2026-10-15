@@ -1,5 +1,5 @@
 // Drives Tabby's tab groups through its DevTools port (Tabby started with --remote-debugging-port=<port>).
-//   node tabby.mjs open --group <g> --name <n> --dir <folder> --file <launch.ps1> [--app claude|codex|shell] [--port 9222]
+//   node tabby.mjs open --group <g> --name <n> --dir <folder> --file <launch.ps1|launch.sh> [--app claude|codex|shell] [--port 9222]
 //   node tabby.mjs open --group <g> --name <n> --dir <folder> [--run "<command>"] [--parent <p>] [--port 9222]
 //   node tabby.mjs list [--port 9222]
 //   node tabby.mjs move --tab <number|title> (--group <g> [--parent <p>] | --none) [--port 9222]
@@ -56,21 +56,27 @@ const open = async (app, profiles, groupOf, o) => {
   let h = 0; for (const c of o.group) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   const color = palette[h % palette.length];
   const mine = app.tabs.filter((t) => groupOf(t) === o.group || (!groupOf(t) && t.color === color));
-  // A launch script is PowerShell: PowerShell 7 by the full path Tabby found for its own profile, so Tabby's PATH does not matter.
-  const pwsh = (await profiles.getProfiles()).find((p) => p.id === 'local:powershell-core')?.options?.command ?? 'pwsh.exe';
+  // A .ps1 launch script runs in PowerShell 7, by the full path Tabby found for its own profile (so Tabby's PATH does not
+  // matter); any other launch script is sourced in the default profile's shell (zsh or bash on macOS and Linux).
+  const ps1 = /\.ps1$/i.test(o.file);
+  const pwsh = (await profiles.getProfiles()).find((p) => p.id === 'local:powershell-core')?.options?.command
+    ?? (process.platform === 'win32' ? 'pwsh.exe' : 'pwsh');
   const ownTitle = o.app === 'claude' || o.app === 'codex';
   if (tg?.version >= 1) {
     // The launch script is typed into a plain shell, not passed as -File: Tabby saves a tab's command line, so a -File tab
     // would run its launch script again after a restart and start a new session. The plugin resumes the session instead.
     // The name is set while the tab is filed (the plugin puts the tab whose title equals the group first).
     const exists = tg.list().some((g) => g.name === o.group);
-    const n = await tg.open({ title: o.name, command: pwsh, args: ['-NoLogo'], cwd: o.dir, run: `& '${o.file.replace(/'/g, "''")}'`,
-      group: o.group, ...exists ? {} : { color }, ...o.parent ? { parent: o.parent } : {} });
+    const shell = ps1
+      ? { command: pwsh, args: ['-NoLogo'], run: `& '${o.file.replace(/'/g, "''")}'` }
+      : { run: `. '${o.file.replace(/'/g, "'\\''")}'` };
+    const n = await tg.open({ title: o.name, cwd: o.dir, ...shell, group: o.group, ...exists ? {} : { color }, ...o.parent ? { parent: o.parent } : {} });
     const tab = app.tabs[n - 1];
     if (ownTitle) tab.setCustomTitle(''); // hand the title back to the app
     const g = tg.list().find((x) => x.name === o.group);
     return { tab: o.name, group: o.group, color: g.color, index: app.tabs.indexOf(tab), groupSize: g.tabs.length, plugin: true };
   }
+  if (!ps1) throw new Error('a launch script other than .ps1 needs the tabby-groups Tabby plugin');
   const profile = { type: 'local', name: o.name, options: { command: pwsh, args: ['-NoLogo', '-NoExit', '-File', o.file], cwd: o.dir, env: {} } };
   const inner = await profiles.openNewTabForProfile(profile);
   const tab = app.getParentTab(inner) ?? inner; // the call returns the terminal; the tab bar holds its wrapper
