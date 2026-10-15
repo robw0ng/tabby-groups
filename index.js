@@ -122,7 +122,9 @@ const CSS = `
 .tabs-on-left > .tab-bar > .tabs, .tabs-on-right > .tab-bar > .tabs { grid-row: 2; }
 .tabs-on-left > .tab-bar > .btn-space, .tabs-on-right > .tab-bar > .btn-space { grid-row: 3; }
 /* The bottom buttons stay docked to the bottom edge while the tabs scroll. */
-.tabs-on-left > .tab-bar > .btn-space + .btn-group, .tabs-on-right > .tab-bar > .btn-space + .btn-group { grid-row: 4; position: sticky; bottom: 0; z-index: 2; }
+.tabs-on-left > .tab-bar > .btn-space + .btn-group, .tabs-on-right > .tab-bar > .btn-space + .btn-group {
+    grid-row: 4; position: sticky; bottom: 0; z-index: 2; background: var(--theme-bg-more-2, #0d0d0d);
+}
 /* Tabby's .window is 100% tall under the title bar and only shrinks to its content's minimum, so with a long tab list it
  * ran 30px past the window's bottom edge and cut off the bottom buttons. */
 app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
