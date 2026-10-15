@@ -17,6 +17,13 @@ const cases = [
   [`${exe} --name @splat`, 'claude --resume "@splat"'],
 ]
 let bad = 0
+// A session id from Claude's process record wins over the name and replaces --continue.
+const id = '8edc92ee-4ee8-4b27-9f8e-15c95c32e151'
+const idCases = [
+  [String.raw`${exe} -n my-session --add-dir C:\repo`, String.raw`claude --resume ${id} --add-dir C:\repo`],
+  [`${exe} -c "go on"`, `claude --resume ${id}`],
+]
+for (const [raw, want] of idCases) { const got = resumeCommand('claude', raw, id); if (got !== want) { bad++; console.log('FAIL id', raw, '\n  got ', got, '\n  want', want) } }
 for (const [raw, want] of cases) { const got = resumeCommand('claude', raw); if (got !== want) { bad++; console.log('FAIL', raw.slice(exe.length), '\n  got ', got, '\n  want', want) } }
 // macOS and Linux: POSIX single quotes.
 const posix = load(false).resumeCommand
@@ -25,5 +32,5 @@ const posixCases = [
   ['/Users/r/.local/bin/claude --resume abc --add-dir /Users/r/core', 'claude --resume abc --add-dir /Users/r/core'],
 ]
 for (const [raw, want] of posixCases) { const got = posix('claude', raw); if (got !== want) { bad++; console.log('FAIL posix', raw, '\n  got ', got, '\n  want', want) } }
-console.log(bad ? bad + ' failed' : 'all ' + (cases.length + posixCases.length) + ' passed')
+console.log(bad ? bad + ' failed' : 'all ' + (cases.length + posixCases.length + idCases.length) + ' passed')
 if (bad) process.exitCode = 1

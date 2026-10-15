@@ -202,6 +202,8 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 .tg-drop-line { position: fixed; z-index: 10000; height: 2px; border-radius: 1px; background: #86b7f7; pointer-events: none; }
 .tabs > tab-header.tg-drop-onto { outline: 2px solid #86b7f7; outline-offset: -2px; border-radius: 6px; }
 .tabs > .tg-header.tg-dragging { opacity: 0.45; }
+/* A pane dragged from a split (Ctrl+Shift) brings its own placeholder into the list; it would push the rows from under the pointer. */
+.tabs-on-left .tabs > .cdk-drag-placeholder:not(tab-header), .tabs-on-right .tabs > .cdk-drag-placeholder:not(tab-header) { display: none !important; }
 .tg-drag-ghost { position: fixed; z-index: 10001; pointer-events: none; padding: 4px 10px; border-radius: 6px; background: #2b2f36; color: #ffffff; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); }
 
 .tg-menu {
@@ -1218,6 +1220,28 @@ function install (injector) {
         return tab.__tg ? setTabPinned(tab, !tab.__tgPinned) : origTogglePin.call(this, tab)
     }
 
+    // Tabby's split-tab title, "focused pane | other panes", has two faults: it is rebuilt while a leaving pane still has
+    // focus, so that pane's name stays ("a | b" on a one-pane tab), and a restored tab not yet shown has no focused pane,
+    // so the title starts with an empty name (" | b"). The title skips missing names and is rebuilt once focus has moved.
+    const SplitTab = core.SplitTabComponent
+    const origRemovePane = SplitTab?.prototype.removeTab
+    const origUpdateTitle = SplitTab?.prototype.updateTitle
+    if (origRemovePane && origUpdateTitle) {
+        SplitTab.prototype.updateTitle = function () {
+            if (this.disableDynamicTitle) {
+                return
+            }
+            const focused = this.getFocusedTab()
+            const titles = [focused, ...this.getAllTabs().filter(p => p !== focused)].map(p => p?.displayTitle).filter(Boolean)
+            this.setTitle([...new Set(titles)].join(' | '))
+        }
+        SplitTab.prototype.removeTab = function (tab) {
+            origRemovePane.call(this, tab)
+            this.updateTitle()
+        }
+        app.tabs.forEach(t => t instanceof SplitTab && t.updateTitle())
+    }
+
     // Persistence: the group path rides in each tab's recovery token and comes back as a tab input.
     const origGetToken = recovery.getFullRecoveryToken
     const origRecover = recovery.recoverTab
@@ -1269,9 +1293,10 @@ function install (injector) {
     /**
      * The command that brings a Claude Code or Codex session back after Tabby restarts (Tabby restores the shell and its
      * screen text, never the program). Keeps every launch flag of the original command (several --add-dir, the permission
-     * mode, the model, …); drops the first prompt and the old resume, continue, name and print flags.
+     * mode, the model, …); drops the first prompt and the old resume, continue, name and print flags. A known session id
+     * wins over the name, and --continue ("latest session in this folder") is the last resort: several sessions can share a folder.
      */
-    function resumeCommand (app, raw) {
+    function resumeCommand (app, raw, sessionId) {
         if (app === 'codex') {
             return 'codex resume --last'
         }
@@ -1303,7 +1328,7 @@ function install (injector) {
                 keep.push(flag, ...value === undefined ? [] : [shellQuote(value)])
             }
         }
-        return ['claude', ...name ? ['--resume', shellQuote(name)] : ['--continue'], ...keep].join(' ')
+        return ['claude', ...sessionId || name ? ['--resume', shellQuote(sessionId || name)] : ['--continue'], ...keep].join(' ')
     }
     // A resume keeps only the Claude flags listed here; any other flag is dropped, and a bare word is the first prompt.
     const CLAUDE_KEPT_VALUE_FLAGS = ['--model', '--fallback-model', '--permission-mode', '--add-dir', '--settings',
@@ -1358,6 +1383,17 @@ function install (injector) {
     const shellOf = command => SHELLS[(command ?? '').split(/[\\/]/).pop().toLowerCase()] ?? null
     const profileKind = term => term.profile?.type === 'ssh' ? 'ssh' : shellOf(term.profile?.options?.command)
 
+    /** The session a running Claude Code process holds: Claude records it in sessions/<pid>.json under its config folder. */
+    function claudeSessionId (pid) {
+        try {
+            const dir = process.env.CLAUDE_CONFIG_DIR || require('path').join(require('os').homedir(), '.claude')
+            const id = JSON.parse(require('fs').readFileSync(require('path').join(dir, 'sessions', pid + '.json'), 'utf8')).sessionId
+            return /^[0-9a-f-]{36}$/i.test(id) ? id : null
+        } catch {
+            return null
+        }
+    }
+
     async function inspect (term) {
         const info = term.__tgInfo ??= { kind: profileKind(term), cwd: null }
         let procs = []
@@ -1382,7 +1418,7 @@ function install (injector) {
         updateAgent(term)
         // What to type after a restart to bring this session back; kept only while Claude or Codex runs.
         if (procs.length && !info.resumePending) {
-            info.resume = resumeCommand(app, appProc?.raw)
+            info.resume = resumeCommand(app, appProc?.raw, app === 'claude' ? claudeSessionId(appProc.pid) : null)
         }
 
         // The OS knows the real folder of an app, of cmd, and of a macOS or Linux shell. PowerShell and Git Bash on Windows
@@ -1798,11 +1834,15 @@ function install (injector) {
         }
     }
 
+    // A pane dragged out of a split (Ctrl+Shift, Tabby's rearrange mode) is dropped on the tab bar as itself: Tabby wraps it in
+    // a new tab at the end, and the drop then files that new tab. Its old tab is a valid target, so it is not "the dragged tab".
+    let draggedPane = null
     function startDrop (tab) {
         if (!document.querySelector('.tabs-on-left, .tabs-on-right')) {
             return
         }
-        draggedTab = top(tab)
+        draggedPane = app.tabs.includes(tab) ? null : { pane: tab, from: top(tab) }
+        draggedTab = draggedPane ? null : tab
         dropIntent = null
         document.addEventListener('pointermove', onDragMove, true)
         document.addEventListener('keydown', onDragKey, true)
@@ -1811,11 +1851,13 @@ function install (injector) {
     function endDrop () {
         document.removeEventListener('pointermove', onDragMove, true)
         document.removeEventListener('keydown', onDragKey, true)
-        const tab = draggedTab
+        // Tabby has already handled the drop: a pane let go over the tab bar now has a tab of its own.
+        const tab = draggedPane ? top(draggedPane.pane) : draggedTab
+        const moved = !draggedPane || tab !== draggedPane.from
         const i = dropIntent
-        draggedTab = dropIntent = null
+        draggedTab = draggedPane = dropIntent = null
         showDropMark()
-        if (tab && i && app.tabs.includes(tab)) {
+        if (tab && i && moved && app.tabs.includes(tab) && i.tab !== tab) {
             applyDrop(tab, i)
         }
     }
@@ -2013,6 +2055,10 @@ function install (injector) {
         app.renameTab = origRename
         app.duplicateTab = origDuplicate
         app.toggleTabPinned = origTogglePin
+        if (origRemovePane && origUpdateTitle) {
+            SplitTab.prototype.removeTab = origRemovePane
+            SplitTab.prototype.updateTitle = origUpdateTitle
+        }
         delete window.__tabbyGroups
     }
 
