@@ -1542,7 +1542,8 @@ function install (injector) {
     function readAsking (sessionId) {
         try {
             const a = JSON.parse(require('fs').readFileSync(require('path').join(askingDir, sessionId + '.json'), 'utf8'))
-            return ['question', 'permission'].includes(a.kind) ? { kind: a.kind, since: a.since } : null
+            // source "text": the turn ended with a question in plain text, not a menu.
+            return ['question', 'permission'].includes(a.kind) ? { kind: a.kind, since: a.since, ...a.source === 'text' ? { source: 'text' } : {} } : null
         } catch {
             return null
         }
