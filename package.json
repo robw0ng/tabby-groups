@@ -1,0 +1,16 @@
+{
+  "name": "tabby-groups",
+  "version": "0.1.0",
+  "description": "Tab groups, session icons and search for Tabby's side tab bar",
+  "keywords": [
+    "tabby-plugin"
+  ],
+  "author": "robw0ng",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robw0ng/tabby-groups.git"
+  },
+  "main": "index.js",
+  "private": true
+}

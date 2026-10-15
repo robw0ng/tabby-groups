@@ -1,0 +1,78 @@
+# tabby-groups
+
+Real tab groups for [Tabby](https://tabby.sh)'s side tab bar: nested, coloured, collapsible groups, with session icons, a folder line and search for every tab.
+
+It works when Tabby's tabs are on the left or the right. With tabs on the top or the bottom, Tabby looks as usual and the groups wait until the tabs are back on the side.
+
+## What you get
+
+| Feature | Detail |
+| --- | --- |
+| Groups | Name, colour, collapse, pin. Groups go inside groups, with no depth limit, drawn as nested panels. |
+| Collapse | A collapsed group still shows the tab you are in, until you select another tab |
+| Drag and drop | Drop a tab on another tab to make a group, as on an iPhone. Drop on an edge to reorder. Drag a group header to move the whole group. |
+| Rename | Double-click a group name or a tab title to rename it in place |
+| New tab | Double-click empty space, or click a group's +, to open a tab in that group |
+| Session icons | Claude Code, Codex, Gemini, Node, Python, Docker, Vim, SSH, PowerShell, cmd, Bash, WSL and more |
+| Folder line | Each tab shows its current folder under its title |
+| Claude Code state | A ring while Claude works; a dot when it finished while you were away. Group headers count both. |
+| Search | Matches titles, group names, folders, apps and tab numbers (`#12`). Enter opens the first match. |
+| Pins | A pinned group goes first in its scope; a tab pinned in a group goes first in that group |
+| Resize | Drag the side bar's inner edge |
+| Restart | Groups, colours, pins and folders come back. Claude Code and Codex sessions resume in their folder. |
+
+## Install
+
+Needs Tabby 1.0. The plugin has no dependencies.
+
+1. Close Tabby.
+2. Copy this repo's folder into Tabby's plugin folder as `node_modules/tabby-groups`, or install it there with npm:
+
+   | System | Plugin folder |
+   | --- | --- |
+   | Windows | `%APPDATA%\tabby\plugins` |
+   | macOS | `~/Library/Application Support/tabby/plugins` |
+   | Linux | `~/.config/tabby/plugins` |
+
+   ```sh
+   cd <plugin folder>
+   npm install <git URL of this repo>
+   ```
+
+3. Start Tabby, and set the tab position to Left or Right in **Settings > Appearance**.
+
+## Use
+
+| To | Do |
+| --- | --- |
+| Make a group | Drop a tab on another tab, or right-click a tab > Add to group > New group |
+| Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup |
+| Collapse or expand | Click the group header |
+| Leave a group | Right-click the tab > Remove from group |
+| Cancel a drag | Press Escape |
+
+## Works with tabby-remote
+
+[tabby-remote](https://github.com/robw0ng/tabby-remote) shows the same groups on your phone. Changes on either side show on both, and Tabby shows which devices have each tab open.
+
+## Scripting
+
+Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window, for example over the Chrome DevTools Protocol:
+
+| Function | Does |
+| --- | --- |
+| `open({ title, command, args, cwd, run, group, parent, color })` | Opens a shell tab in a group and types `run` once the shell is ready |
+| `addTab(tab, group, { color, parent })` / `removeTab(tab)` | Puts a tab in a group, or takes it out |
+| `setCollapsed`, `setColor`, `setPinned`, `setParent`, `rename`, `ungroup` | Change a group |
+| `setTabPinned(tab, pinned)` | Pins a tab inside its group |
+| `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
+| `list()` | All groups, with their tabs and Claude Code counts |
+| `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
+
+## Test
+
+```sh
+node test-resume.js
+```
+
+Checks the command that resumes a Claude Code session after a restart, and its quoting for PowerShell and POSIX shells.
