@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "tabby-groups",
-      "description": "Open, list and move Tabby tabs in tab groups from Claude Code.",
+      "description": "Open, list and move Tabby tabs in tab groups, and run tested code inside Tabby, from Claude Code.",
       "source": "./claude",
       "category": "productivity"
     }

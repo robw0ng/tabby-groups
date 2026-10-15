@@ -48,7 +48,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 
 ## Scripting
 
-Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window, for example over the Chrome DevTools Protocol:
+Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window. The Claude Code plugin's `scripts/tabby-eval.mjs` runs a JavaScript file inside Tabby through its DevTools port and prints the result as JSON, with no shell quoting (`node scripts/tabby-eval.test.mjs --port <test Tabby port>` checks it). The functions:
 
 | Function | Does |
 | --- | --- |

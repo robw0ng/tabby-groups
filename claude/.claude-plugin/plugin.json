@@ -1,7 +1,7 @@
 {
   "name": "tabby-groups",
-  "version": "0.1.4",
-  "description": "Open, list and move Tabby tabs in tab groups from Claude Code.",
+  "version": "0.1.5",
+  "description": "Open, list and move Tabby tabs in tab groups, and run tested code inside Tabby, from Claude Code.",
   "author": {
     "name": "Robert Wong"
   }
