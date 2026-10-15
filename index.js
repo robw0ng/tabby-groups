@@ -12,14 +12,28 @@ const COLORS = [
 ]
 const NO_COLOR = '#9aa0a6'
 // Panel tints are kept dark enough that all side-bar text meets WCAG AA (4.5:1) on every palette colour, yellow included.
-// A tint is a solid mix with the sidebar background, never with its parent, so hues never blend. Deeper panels get a
-// little less colour (a darker background only raises contrast), so a subgroup stands out inside a parent of its colour.
+// A tint is a solid mix with the sidebar background, never with its parent, so hues never blend. A subgroup in its
+// parent's colour is also mixed with black by --tg-shade-step, once per such level in a row, so it never melts into the
+// parent; a subgroup in another colour keeps its normal look.
 const tintPct = depth => Math.max(20 - depth * 3, 11)
+const shaded = (fill, depth) => depth ? `color-mix(in srgb, ${fill}, #000 calc(var(--tg-shade-step) * ${depth}))` : fill
 const ACTIVE_TINT_ADD = 6
 
 // A top-level group is one tinted panel: its header, subgroup rows and member tab-headers, all Tabby's own siblings.
 const CSS = `
-.tabs { --tg-bg: var(--theme-bg-more-2, #0d0d0d); }
+.tabs { --tg-bg: var(--theme-bg-more-2, #0d0d0d); --tg-shade-step: 36%; }
+/* A light theme: lighter shading steps and dark text, so every level stays readable. The doubled .tg-light outweighs
+   the dark-theme rules further down, which have the same selectors otherwise. */
+.tabs.tg-light { --tg-shade-step: 14%; }
+.tabs.tg-light.tg-light .tg-name { color: #161616; }
+.tabs.tg-light.tg-light .tg-count, .tabs.tg-light.tg-light .tg-arrow, .tabs.tg-light.tg-light .tg-pin, .tabs.tg-light.tg-light .tg-add,
+.tabs.tg-light.tg-light .tg-more, .tabs.tg-light.tg-light .tg-tab-pin { color: #333333; }
+.tabs.tg-light.tg-light .tg-roll { color: #1f5fbf; }
+.tabs.tg-light.tg-light .tg-roll-ask { color: #8a5300; }
+.tabs.tg-light.tg-light > tab-header .tg-cwd { color: #262626; }
+.tabs-on-left .tabs.tg-light.tg-light > tab-header > .name, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .name { color: #161616 !important; }
+.tabs-on-left .tabs.tg-light.tg-light > tab-header > .index, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .index { color: #222222 !important; opacity: 1 !important; }
+.tabs-on-left .tabs.tg-light.tg-light > tab-header > .pin-indicator, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .pin-indicator { color: #222222 !important; }
 .tabs > .tg-hidden { display: none !important; }
 .tabs > tab-header.tg-member { background-color: color-mix(in srgb, var(--tg-color) 20%, var(--tg-bg)) !important; }
 .tabs > tab-header.tg-member.active { background-color: color-mix(in srgb, var(--tg-color) 26%, var(--tg-bg)) !important; }
@@ -65,9 +79,12 @@ const CSS = `
 .tg-count { font-size: 11px; color: #d8d8d8; white-space: nowrap; }
 .tg-sub .tg-text { flex-direction: row; align-items: baseline; gap: 6px; }
 .tg-sub .tg-name { font-weight: 500; }
-.tg-inner { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0; background: color-mix(in srgb, var(--tg-own) var(--tg-own-pct), var(--tg-bg)); }
+.tg-inner {
+    display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0;
+    background: color-mix(in srgb, color-mix(in srgb, var(--tg-own) var(--tg-own-pct), var(--tg-bg)), #000 calc(var(--tg-shade-step) * var(--tg-own-depth, 0)));
+}
 .tg-foot { flex: none; background-color: color-mix(in srgb, var(--tg-color) 20%, var(--tg-bg)); }
-.tg-foot-inner { background: color-mix(in srgb, var(--tg-own) var(--tg-own-pct), var(--tg-bg)); }
+.tg-foot-inner { background: color-mix(in srgb, color-mix(in srgb, var(--tg-own) var(--tg-own-pct), var(--tg-bg)), #000 calc(var(--tg-shade-step) * var(--tg-own-depth, 0))); }
 
 /* One gap (--tg-gap) on every side of a panel. A panel right after another one drops its leading gap. */
 .tabs-on-left .tabs, .tabs-on-right .tabs { --tg-gap: 6px; }
@@ -179,6 +196,14 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 .tabs > tab-header.tg-asking > .name { font-weight: 700; }
 .tabs > tab-header.tg-asking .tg-cwd { font-weight: normal; }
 .tg-roll-ask { color: #f5b54a; }
+/* A Claude tab waiting on a background task: a green count at the icon's bottom-right. */
+.tg-icon > .tg-bgtask {
+    position: absolute; bottom: -5px; right: -7px; min-width: 12px; height: 12px; padding: 0 2px; border-radius: 6px;
+    background: #8ef58a; color: #111; font-size: 8px; font-weight: 800; line-height: 12px; text-align: center;
+    box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
+}
+.tg-roll-run { color: #8ef58a; }
+.tabs.tg-light.tg-light .tg-roll-run { color: #1d6b2c; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */
 .tabs-on-left .tabs > tab-header > .pin-indicator, .tabs-on-right .tabs > tab-header > .pin-indicator { margin: 0 0 0 10px !important; align-self: center; color: #d0d0d0 !important; opacity: 1 !important; }
 .tabs-on-left .tabs > tab-header > .pin-indicator + .name, .tabs-on-right .tabs > tab-header > .pin-indicator + .name { margin-left: 10px; }
@@ -270,6 +295,11 @@ function install (injector) {
     // Set by dispose(). Work still in flight (a process-tree read, a shell wait) must not draw over the next install.
     let disposed = false
     const tint = g => g.color ?? NO_COLOR
+    /** How many levels in a row, up from this group, share their parent's colour: the number of shading steps. */
+    const shadeOf = g => {
+        const parent = groups.get(g?.parent)
+        return parent && tint(parent) === tint(g) ? shadeOf(parent) + 1 : 0
+    }
 
     /** The group and its ancestors, root first. */
     function chainOf (name) {
@@ -290,6 +320,7 @@ function install (injector) {
 
     function ensureGroup (name, opts = {}) {
         let g = groups.get(name)
+        const created = !g
         if (!g) {
             g = { name, color: COLORS[groups.size % COLORS.length].value, collapsed: false, parent: null, pinned: false }
             groups.set(name, g)
@@ -305,6 +336,11 @@ function install (injector) {
             if (!setParent(name, opts.parent, false)) {
                 throw new Error(`tabby-groups: cannot put "${name}" inside "${opts.parent}", because it would contain itself`)
             }
+        }
+        // A new subgroup in its parent's colour would melt into it: it takes the next palette colour. A chosen colour stays.
+        const parentColor = groups.get(g.parent)?.color
+        if (created && opts.color === undefined && parentColor && g.color === parentColor) {
+            g.color = COLORS[(COLORS.findIndex(c => c.value === g.color) + 1) % COLORS.length].value
         }
         return g
     }
@@ -507,6 +543,7 @@ function install (injector) {
             tabs: members(g.name).map(t => ({ title: titleOf(t), index: app.tabs.indexOf(t) })),
             needsYou: subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length,
             asking: subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length,
+            running: subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length,
             busy: subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy').length,
             first: app.tabs.indexOf(subtree(g.name)[0]),
         })).sort((a, b) => a.first - b.first).map(({ first, ...g }) => g)
@@ -796,6 +833,7 @@ function install (injector) {
         const scrollTop = scroller?.scrollTop ?? 0
         container.querySelectorAll(':scope > .tg-header, :scope > .tg-foot').forEach(e => e.remove())
         const vertical = !!container.closest('.tabs-on-left, .tabs-on-right')
+        container.classList.toggle('tg-light', vertical && isLightBg(getComputedStyle(container).getPropertyValue('--tg-bg')))
         // The plugin only shapes a side tab bar; with tabs on top or bottom Tabby looks stock, and groups wait in memory.
         setLiveReorder(container, !vertical)
         if (!vertical) {
@@ -852,6 +890,7 @@ function install (injector) {
                 f.innerHTML = '<div class="tg-foot-inner"></div>'
                 f.style.setProperty('--tg-own', tint(chain[k]))
                 f.style.setProperty('--tg-own-pct', tintPct(k) + '%')
+                f.style.setProperty('--tg-own-depth', shadeOf(chain[k]))
                 after.after(f)
                 after = f
                 rows.push({ el: f, chain: chain.slice(0, k + 1), hidden: !open(chain[k]), kind: 'foot' })
@@ -894,15 +933,29 @@ function install (injector) {
             ;['background-color', 'box-shadow'].forEach(p => r.el.style.removeProperty(p))
             return
         }
-        const mix = (g, pct) => `color-mix(in srgb, ${tint(g)} ${pct}%, var(--tg-bg))`
+        const mix = (g, pct) => shaded(`color-mix(in srgb, ${tint(g)} ${pct}%, var(--tg-bg))`, shadeOf(g))
         const pct = tintPct(level) + (r.active ? ACTIVE_TINT_ADD : 0)
         const bands = []
         for (let m = level - 1; m >= 0; m--) {
             const offset = (level - m) * gap
-            bands.push(`-${offset}px 0 0 0 ${mix(r.chain[m], tintPct(m))}`, `${offset}px 0 0 0 ${mix(r.chain[m], tintPct(m))}`)
+            const band = mix(r.chain[m], tintPct(m))
+            bands.push(`-${offset}px 0 0 0 ${band}`, `${offset}px 0 0 0 ${band}`)
         }
         r.el.style.setProperty('background-color', mix(r.chain[level], pct), 'important')
         r.el.style.setProperty('box-shadow', bands.join(','), 'important')
+    }
+
+    /** Whether a CSS colour is light (relative luminance over 0.5); a canvas turns any CSS colour into #rrggbb. */
+    const colorProbe = document.createElement('canvas').getContext('2d')
+    function isLightBg (cssColor) {
+        colorProbe.fillStyle = '#000'
+        colorProbe.fillStyle = cssColor.trim() || '#000'
+        const hex = colorProbe.fillStyle
+        if (!/^#[0-9a-f]{6}$/i.test(hex)) {
+            return false
+        }
+        const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5
     }
 
     function makeHeader (g, depth, afterGroup, open) {
@@ -911,6 +964,7 @@ function install (injector) {
         h.dataset.group = g.name
         h.style.setProperty('--tg-own', tint(g))
         h.style.setProperty('--tg-own-pct', tintPct(depth) + '%')
+        h.style.setProperty('--tg-own-depth', shadeOf(g))
         h.dataset.tgTip = g.name
         const count = subtree(g.name).length
         const body = '<span class="tg-arrow"></span><span class="tg-text"><span class="tg-name"></span><span class="tg-count"></span></span>'
@@ -930,6 +984,10 @@ function install (injector) {
         const asks = subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length
         if (asks) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-ask', textContent: `${asks} asking` }))
+        }
+        const running = subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length
+        if (running) {
+            countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-run', textContent: `${running} running` }))
         }
         if (roll) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll', textContent: roll }))
@@ -1506,6 +1564,9 @@ function install (injector) {
                 info.sessionId = sessionId
                 setAsking(term, sessionId ? readAsking(sessionId) : null)
             }
+            if (sessionId) {
+                trackTasks(sessionId)
+            }
         }
 
         // The OS knows the real folder of an app, of cmd, and of a macOS or Linux shell. PowerShell and Git Bash on Windows
@@ -1598,7 +1659,10 @@ function install (injector) {
             return
         }
         const t = top(term)
-        info.agent = state && { state, since: Date.now(), needsYou: state === 'waiting' && prev?.state === 'busy' && !lookedAt(t), asking: info.asking ?? null }
+        info.agent = state && {
+            state, since: Date.now(), needsYou: state === 'waiting' && prev?.state === 'busy' && !lookedAt(t),
+            asking: info.asking ?? null, background: state === 'busy' ? null : info.background ?? null,
+        }
         syncAgent(t)
     }
     /*
@@ -1633,6 +1697,114 @@ function install (injector) {
             app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => id && p.__tgInfo?.sessionId === id).forEach(p => setAsking(p, readAsking(id)))
         })
     } catch { }
+
+    /*
+     * "Running in background": a Claude Bash task started with run_in_background writes <temp>/claude/<project>/<session
+     * id>/tasks/b<id>.output and holds the file open until it ends (on Windows exclusively, so an exclusive open fails);
+     * finished files stay. The session's tasks folder is watched for new files, and files still held are checked every 3 s
+     * until none is left. Claude's foreground commands hold their file too, so the state shows only while Claude is not busy.
+     */
+    const fsx = require('fs'), pathx = require('path')
+    const tasksRoot = pathx.join(require('os').tmpdir(), 'claude')
+    const tasksDirs = new Map()
+    function tasksDirOf (sessionId) {
+        if (!tasksDirs.has(sessionId)) {
+            try {
+                const dir = fsx.readdirSync(tasksRoot).map(p => pathx.join(tasksRoot, p, sessionId, 'tasks')).find(d => fsx.existsSync(d))
+                if (dir) {
+                    tasksDirs.set(sessionId, dir)
+                }
+            } catch { }
+        }
+        return tasksDirs.get(sessionId) ?? null
+    }
+    // Windows: libuv's UV_FS_O_EXLOCK (0x10000000), which Node 22 does not export; it fails with EBUSY while a task writes.
+    const EXCLUSIVE = fsx.constants.UV_FS_O_EXLOCK ?? 0x10000000
+    async function isHeld (file) {
+        if (!IS_WIN) {
+            return !!(await execText('lsof', ['-t', '--', file])).trim()
+        }
+        try {
+            fsx.closeSync(fsx.openSync(file, fsx.constants.O_RDONLY | EXCLUSIVE))
+            return false
+        } catch (e) {
+            return e.code === 'EBUSY' || e.code === 'EPERM'
+        }
+    }
+    const taskFiles = new Map()
+    const tasksWatches = new Map()
+    let tasksTimer = null
+    let tasksChecking = false
+    function trackTasks (sessionId) {
+        const dir = tasksDirOf(sessionId)
+        if (!dir || tasksWatches.has(dir)) {
+            return
+        }
+        try {
+            for (const f of fsx.readdirSync(dir).filter(f => /^b.*\.output$/.test(f))) {
+                const file = pathx.join(dir, f)
+                if (Date.now() - fsx.statSync(file).mtimeMs < 24 * 3600e3) {
+                    taskFiles.set(file, sessionId)
+                }
+            }
+            tasksWatches.set(dir, fsx.watch(dir, (event, f) => {
+                if (f && /^b.*\.output$/.test(f)) {
+                    taskFiles.set(pathx.join(dir, f), sessionId)
+                    checkTasks()
+                }
+            }))
+        } catch { }
+        checkTasks()
+    }
+    async function checkTasks () {
+        if (tasksChecking || disposed) {
+            return
+        }
+        tasksChecking = true
+        clearTimeout(tasksTimer)
+        const held = new Map()
+        for (const [file, sessionId] of [...taskFiles]) {
+            if (await isHeld(file)) {
+                held.set(sessionId, [...held.get(sessionId) ?? [], pathx.basename(file, '.output')])
+            } else {
+                taskFiles.delete(file)
+            }
+        }
+        app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => p.__tgInfo?.sessionId)
+            .forEach(p => setBackground(p, held.get(p.__tgInfo.sessionId) ?? []))
+        tasksChecking = false
+        if (taskFiles.size && !disposed) {
+            tasksTimer = setTimeout(checkTasks, 3000)
+        }
+    }
+    /** Optional task labels, written by claude-statusline: <config>/bg-tasks/<session id>/<task id>.json = { id, label }. */
+    function taskLabels (sessionId, ids) {
+        const dir = pathx.join(process.env.CLAUDE_CONFIG_DIR || pathx.join(require('os').homedir(), '.claude'), 'bg-tasks', sessionId)
+        return ids.map(id => {
+            try {
+                return JSON.parse(fsx.readFileSync(pathx.join(dir, id + '.json'), 'utf8')).label
+            } catch {
+                return null
+            }
+        }).filter(Boolean)
+    }
+    function setBackground (pane, ids) {
+        const info = pane.__tgInfo
+        const before = info.background?.ids?.join() ?? ''
+        if (before === ids.join()) {
+            return
+        }
+        info.background = ids.length ? { count: ids.length, since: info.background?.since ?? Date.now(), ids, labels: taskLabels(info.sessionId, ids) } : null
+        const shown = info.agent?.state === 'busy' ? null : info.background
+        info.agent = info.agent
+            ? { ...info.agent, background: shown }
+            : shown && { state: 'waiting', since: Date.now(), needsYou: false, asking: info.asking ?? null, background: shown }
+        syncAgent(top(pane))
+    }
+
+    const mergeBackground = list => list.length
+        ? { count: list.reduce((n, b) => n + b.count, 0), since: Math.min(...list.map(b => b.since)), ids: list.flatMap(b => b.ids), labels: list.flatMap(b => b.labels) }
+        : null
     /** The top tab's agent: busy if any pane works, needs you if any pane does. Emits tabby-groups:agent. */
     function syncAgent (t) {
         const panes = (t.getAllTabs?.() ?? [t]).map(p => p.__tgInfo?.agent).filter(Boolean)
@@ -1642,6 +1814,7 @@ function install (injector) {
             since: Math.max(...(busy.length ? busy : panes).map(a => a.since)),
             needsYou: panes.some(a => a.needsYou),
             asking: panes.find(a => a.asking)?.asking ?? null,
+            background: busy.length ? null : mergeBackground(panes.map(a => a.background).filter(Boolean)),
         } : null
         // A split tab keeps the roll-up of its panes; a single pane already holds its own.
         if (!(t.getAllTabs?.() ?? [t]).includes(t)) {
@@ -1775,6 +1948,14 @@ function install (injector) {
         }
         el.classList.toggle('tg-needs-you', !!agent?.needsYou)
         el.classList.toggle('tg-asking', !!asking)
+        let bgEl = iconEl?.querySelector(':scope > .tg-bgtask')
+        if (iconEl && agent?.background) {
+            bgEl ??= iconEl.appendChild(Object.assign(document.createElement('span'), { className: 'tg-bgtask' }))
+            bgEl.textContent = String(agent.background.count)
+            bgEl.dataset.tgTip = `Running in background: ${agent.background.labels.length ? agent.background.labels.join(', ') : agent.background.count + ' task' + (agent.background.count === 1 ? '' : 's')}`
+        } else {
+            bgEl?.remove()
+        }
         // A tab pinned inside its group shows a pin where Tabby shows its own (between the number and the icon).
         let pinEl = el.querySelector(':scope > .tg-tab-pin')
         if (tab.__tgPinned && tab.__tg) {
@@ -2132,6 +2313,7 @@ function install (injector) {
     /** Returns Tabby's tab bar to stock: no group rows, icons, folder lines, classes or inline paint. */
     function clearDecorations () {
         document.querySelectorAll('.tg-header, .tg-foot, .tg-icon, .tg-cwd, .tg-tab-pin, .tg-presence').forEach(e => e.remove())
+        document.querySelectorAll('.tabs.tg-light').forEach(e => e.classList.remove('tg-light'))
         document.querySelectorAll('.tabs > tab-header').forEach(e => {
             e.classList.remove('tg-hidden', 'tg-member', 'tg-last', 'tg-two-line')
             ;['background-color', 'box-shadow', '--tg-color', '--tg-level'].forEach(p => e.style.removeProperty(p))
@@ -2171,6 +2353,8 @@ function install (injector) {
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
         askingWatch?.close()
+        tasksWatches.forEach(w => w.close())
+        clearTimeout(tasksTimer)
         userIconsWatch?.close()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)

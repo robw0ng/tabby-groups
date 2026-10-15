@@ -54,7 +54,9 @@ const open = async (app, profiles, groupOf, o) => {
   }
   const palette = ['#f2756a', '#8ef58a', '#fdffad', '#86b7f7', '#f48cf6', '#d7cff9']; // the tabby-groups plugin's palette
   let h = 0; for (const c of o.group) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const color = palette[h % palette.length];
+  // A new subgroup never takes its parent's colour, or the two panels melt into one.
+  const parentColor = o.parent ? window.__tabbyGroups?.list().find((g) => g.name === o.parent)?.color : null;
+  const color = palette[h % palette.length] === parentColor ? palette[(h + 1) % palette.length] : palette[h % palette.length];
   const mine = app.tabs.filter((t) => groupOf(t) === o.group || (!groupOf(t) && t.color === color));
   // A .ps1 launch script runs in PowerShell 7, by the full path Tabby found for its own profile (so Tabby's PATH does not
   // matter); any other launch script is sourced in the default profile's shell (zsh or bash on macOS and Linux).
