@@ -249,10 +249,12 @@ function install (injector) {
     const titleOf = tab => tab.customTitle || tab.title
     const changed = () => app.emitTabsChanged()
     const IS_WIN = process.platform === 'win32'
-    const onPath = exe => (process.env.PATH ?? '').split(require('path').delimiter).some(dir => dir && require('fs').existsSync(require('path').join(dir, exe)))
-    const DEFAULT_SHELL = IS_WIN
-        ? { command: onPath('pwsh.exe') ? 'pwsh.exe' : 'powershell.exe', args: ['-NoLogo'] }
-        : { command: process.env.SHELL || '/bin/zsh', args: [] }
+    /** The shell of Tabby's default profile (Settings > Terminal > Default profile), or null when it is not a local shell. */
+    async function defaultShell () {
+        const id = injector.get(core.ConfigService).store.terminal?.profile
+        const profile = (await injector.get(core.ProfilesService).getProfiles()).find(p => p.id === id)
+        return profile?.type === 'local' && profile.options?.command ? { command: profile.options.command, args: profile.options.args ?? [] } : null
+    }
     // Set by dispose(). Work still in flight (a process-tree read, a shell wait) must not draw over the next install.
     let disposed = false
     const tint = g => g.color ?? NO_COLOR
@@ -1238,12 +1240,13 @@ function install (injector) {
             // Tabby's own copy of a pane (split, duplicate) asks without includeState and must not start the session twice.
             if (info.resume && options?.includeState) {
                 token.tabbyResume = info.resume
-                // On Windows a resumed Claude comes back in PowerShell, so the functions of the user's PowerShell profile
-                // are there; a cmd tab (Tabby's default profile) never has them.
+                // A resumed Claude comes back in the default profile's shell, so the user's shell profile (functions,
+                // aliases) is there, whatever shell the tab happened to start in.
                 const options = token.profile?.options
-                if (IS_WIN && options && !/(^|[\\/])(pwsh|powershell)(\.exe)?$/i.test(options.command ?? '')) {
-                    options.command = DEFAULT_SHELL.command
-                    options.args = DEFAULT_SHELL.args
+                const shell = options && await defaultShell()
+                if (shell) {
+                    options.command = shell.command
+                    options.args = shell.args
                 }
             }
         }
@@ -2018,7 +2021,10 @@ function install (injector) {
      * @example await __tabbyGroups.open({ title: 'api', cwd: 'C:\\projects\\api', run: 'claude', group: 'api', parent: 'backend' })
      * @returns the new tab's 1-based number (plain JSON for returnByValue)
      */
-    async function open ({ title, command = DEFAULT_SHELL.command, args = DEFAULT_SHELL.args, cwd, run, group, parent, color } = {}) {
+    async function open ({ title, command, args, cwd, run, group, parent, color } = {}) {
+        if (!command) {
+            ;({ command, args } = await defaultShell() ?? (IS_WIN ? { command: 'powershell.exe', args: ['-NoLogo'] } : { command: process.env.SHELL || '/bin/zsh', args: [] }))
+        }
         const inner = await injector.get(core.ProfilesService).openNewTabForProfile({
             type: 'local', name: title ?? command, options: { command, args, cwd, env: {} },
         })
