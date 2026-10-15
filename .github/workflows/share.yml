@@ -1,0 +1,64 @@
+name: share
+
+# Builds tabby-groups-<package.json version>.zip for a coworker: INSTALL.md (for an agent), README.md and the Tabby plugin
+# only, checked for personal content. A manual run keeps the zip as a run artifact; a v* tag attaches it to that tag's release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Lay out the share
+        id: pack
+        run: echo "version=$(node share/pack.mjs out)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag matches package.json
+        if: github.ref_type == 'tag'
+        run: |
+          if [ "$GITHUB_REF_NAME" != "v${{ steps.pack.outputs.version }}" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version ${{ steps.pack.outputs.version }}"; exit 1
+          fi
+
+      - name: Leak check catches a planted leak
+        run: |
+          cp -R out planted
+          echo '// see C:\Users\someone\workflow' >> planted/tabby-groups/index.js
+          if node share/leak-check.mjs planted; then echo "the leak check missed a planted leak"; exit 1; fi
+
+      - name: Leak check
+        run: node share/leak-check.mjs out
+
+      - name: Zip
+        run: cd out && zip -r "../tabby-groups-${{ steps.pack.outputs.version }}.zip" .
+
+      - name: Leak check on the zip itself
+        run: |
+          mkdir unzipped && unzip -q "tabby-groups-${{ steps.pack.outputs.version }}.zip" -d unzipped
+          node share/leak-check.mjs unzipped
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tabby-groups-${{ steps.pack.outputs.version }}
+          path: tabby-groups-${{ steps.pack.outputs.version }}.zip
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip="tabby-groups-${{ steps.pack.outputs.version }}.zip"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            && gh release upload "$GITHUB_REF_NAME" "$zip" --clobber \
+            || gh release create "$GITHUB_REF_NAME" "$zip" --title "tabby-groups $GITHUB_REF_NAME" --notes "Tabby plugin only. Unzip and follow INSTALL.md."
