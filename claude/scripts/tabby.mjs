@@ -91,8 +91,10 @@ const open = async (app, profiles, groupOf, o) => {
   // A .ps1 launch script runs in PowerShell 7, by the full path Tabby found for its own profile (so Tabby's PATH does not
   // matter); any other launch script is sourced in the default profile's shell (zsh or bash on macOS and Linux).
   const ps1 = /\.ps1$/i.test(o.file);
+  // Without such a profile on macOS, the usual install places: a Tabby started from the Dock has launchd's bare PATH.
   const pwsh = (await profiles.getProfiles()).find((p) => p.id === 'local:powershell-core')?.options?.command
-    ?? (process.platform === 'win32' ? 'pwsh.exe' : 'pwsh');
+    ?? (process.platform === 'win32' ? 'pwsh.exe'
+      : ['/opt/homebrew/bin/pwsh', '/usr/local/bin/pwsh', '/usr/local/microsoft/powershell/7/pwsh'].find((p) => require('fs').existsSync(p)) ?? 'pwsh');
   const ownTitle = o.app === 'claude' || o.app === 'codex';
   if (tg?.version >= 1) {
     // The launch script is typed into a plain shell, not passed as -File: Tabby saves a tab's command line, so a -File tab
