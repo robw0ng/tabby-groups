@@ -1,4 +1,4 @@
-const { NgModule, Injector } = require('@angular/core')
+const { NgModule, Injector, ElementRef, ɵɵdefineComponent, ɵɵdirectiveInject } = require('@angular/core')
 const core = require('tabby-core')
 const ICONS = require('./icons')
 
@@ -8,6 +8,7 @@ const { SHELLS, APPS, CLAUDE_TITLE, shellOf, claudeSessionId, processList, osCwd
 const { createButtons } = require('./buttons')
 const { createAgent } = require('./agent')
 const { createTooltip } = require('./tooltip')
+const { renderSettings } = require('./settings')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -1893,7 +1894,8 @@ function install (injector) {
 
     /** The user's icons from tabby-groups.json (tab kind "user:<name>"), for other front ends such as a phone side bar. */
     const icons = () => userIcons.map(({ title, process, ...icon }) => icon)
-    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose }
+    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose,
+        renderSettings: host => userIconsFile && renderSettings(host, userIconsFile) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
     if (window.__tgAfterReload) {
         const result = window.__tgAfterReload
@@ -1910,6 +1912,36 @@ class TabbyGroupsModule {
 }
 TabbyGroupsModule.ctorParameters = () => [{ type: Injector }]
 
-module.exports = NgModule({})(TabbyGroupsModule)
+// Settings > Tab groups. Tabby has no template compiler at run time, so the component is declared by hand with an
+// empty template, and the page is plain DOM from the live plugin copy (so a reload brings the new page with it).
+class GroupsSettingsComponent {
+    constructor (ref) {
+        this.host = ref.nativeElement
+    }
+
+    ngOnInit () {
+        window.__tabbyGroups?.renderSettings(this.host)
+    }
+}
+GroupsSettingsComponent.ɵfac = () => new GroupsSettingsComponent(ɵɵdirectiveInject(ElementRef))
+GroupsSettingsComponent.ɵcmp = ɵɵdefineComponent({ type: GroupsSettingsComponent, selectors: [['tabby-groups-settings']], decls: 0, vars: 0, template: () => { }, encapsulation: 2 })
+
+const settingsApi = require('tabby-settings')
+class GroupsSettingsTabProvider extends settingsApi.SettingsTabProvider {
+    constructor () {
+        super()
+        this.id = 'tabby-groups'
+        this.icon = 'layer-group'
+        this.title = 'Tab groups'
+    }
+
+    getComponentType () {
+        return GroupsSettingsComponent
+    }
+}
+
+module.exports = NgModule({
+    providers: [{ provide: settingsApi.SettingsTabProvider, useClass: GroupsSettingsTabProvider, multi: true }],
+})(TabbyGroupsModule)
 module.exports.default = module.exports
 module.exports.install = install
