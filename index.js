@@ -1582,6 +1582,9 @@ function install (injector) {
     }
     function runCheck (b) {
         runShell(b.check, { cwd: b.cwd, timeout: 5 * 60e3 }, (err, stdout, stderr) => {
+            if (disposed) {
+                return
+            }
             const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
             if (code !== 0 && code !== 10) {
                 console.warn('tabby-groups: button check failed', b.label, code, String(stderr || err?.message).trim())
@@ -1624,6 +1627,9 @@ function install (injector) {
         renderButtons()
         runShell(b.command, { cwd: b.cwd, timeout: 30 * 60e3 }, (err, stdout, stderr) => {
             running.delete(b)
+            if (disposed) {
+                return
+            }
             const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
             const log = buttonLog(b)
             try {
@@ -1655,8 +1661,48 @@ function install (injector) {
             }
         })
     }
-    /** Until plugins can reload in place: say a restart is needed. */
-    const reloadActions = (names, log) => [['Open log', () => openLog(log)], ['Restart Tabby to load them', null]]
+    /*
+     * Reload in place, the contract shared with tabby-remote: a plugin "tabby-x" puts window.__tabbyX = { reload(), dispose() }
+     * on the page; reload() drops its own require cache and installs again, and install() disposes the old copy first.
+     * A plugin without reload() needs a Tabby restart, and so does a change to a plugin's Angular providers.
+     */
+    const pluginGlobal = name => '__' + name.replace(/-(\w)/g, (m, c) => c.toUpperCase())
+    const canReload = name => typeof window[pluginGlobal(name)]?.reload === 'function'
+    function reloadActions (names, log) {
+        const stuck = names.filter(n => !canReload(n))
+        return [['Open log', () => openLog(log)],
+            ...stuck.length < names.length ? [['Reload plugins', () => reloadPlugins(names.filter(canReload))]] : [],
+            ...stuck.length ? [[`Restart Tabby to load ${stuck.join(', ')}`, null]] : []]
+    }
+    /** Reloads the plugins, this one last (its reload ends this copy); the next copy shows the result. */
+    async function reloadPlugins (names) {
+        const done = [], failed = []
+        for (const n of [...names].sort((a, b) => (a === 'tabby-groups') - (b === 'tabby-groups'))) {
+            if (n === 'tabby-groups') {
+                window.__tgAfterReload = { done: [...done, n], failed }
+            }
+            try {
+                await window[pluginGlobal(n)].reload()
+                done.push(n)
+            } catch (e) {
+                console.warn('tabby-groups: reload failed', n, e)
+                failed.push(n)
+            }
+        }
+        if (!names.includes('tabby-groups')) {
+            reportReload({ done, failed })
+        }
+    }
+    function reportReload ({ done, failed }) {
+        showToast(failed.length ? 'Some plugins did not reload' : 'Plugins reloaded ✓',
+            [...done.length ? [`Reloaded: ${done.join(', ')}`] : [], ...failed.length ? [`Restart Tabby to load ${failed.join(', ')}`] : []], [], failed.length ? 0 : 6000)
+    }
+    /** This plugin's reload: drop its modules from the require cache and install the files on disk again. */
+    function reload () {
+        const dir = require('path').dirname(require.resolve('./index.js'))
+        Object.keys(require.cache).filter(k => k.startsWith(dir + require('path').sep)).forEach(k => delete require.cache[k])
+        return require(require('path').join(dir, 'index.js')).install(injector)
+    }
     function openLog (file) {
         try {
             require('@electron/remote').shell.openPath(file)
@@ -2679,7 +2725,13 @@ function install (injector) {
 
     /** The user's icons from tabby-groups.json (tab kind "user:<name>"), for other front ends such as a phone side bar. */
     const icons = () => userIcons.map(({ title, process, ...icon }) => icon)
-    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons, dispose }
+    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons, reload, dispose }
+    // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
+    if (window.__tgAfterReload) {
+        const result = window.__tgAfterReload
+        delete window.__tgAfterReload
+        setTimeout(() => reportReload(result), 500)
+    }
     return window.__tabbyGroups
 }
 
