@@ -204,6 +204,14 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 }
 .tg-roll-run { color: #8ef58a; }
 .tabs.tg-light.tg-light .tg-roll-run { color: #1d6b2c; }
+/* A Claude tab that compacts its context: a violet badge at the icon's bottom-left. */
+.tg-icon > .tg-compact {
+    position: absolute; bottom: -5px; left: -7px; width: 12px; height: 12px; border-radius: 50%;
+    background: #d7cff9; color: #111; font-size: 7px; line-height: 12px; text-align: center;
+    box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
+}
+.tg-roll-cmp { color: #d7cff9; }
+.tabs.tg-light.tg-light .tg-roll-cmp { color: #5b3fa8; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */
 .tabs-on-left .tabs > tab-header > .pin-indicator, .tabs-on-right .tabs > tab-header > .pin-indicator { margin: 0 0 0 10px !important; align-self: center; color: #d0d0d0 !important; opacity: 1 !important; }
 .tabs-on-left .tabs > tab-header > .pin-indicator + .name, .tabs-on-right .tabs > tab-header > .pin-indicator + .name { margin-left: 10px; }
@@ -544,6 +552,7 @@ function install (injector) {
             needsYou: subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length,
             asking: subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length,
             running: subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length,
+            compacting: subtree(g.name).filter(t => t.__tgInfo?.agent?.compacting).length,
             busy: subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy').length,
             first: app.tabs.indexOf(subtree(g.name)[0]),
         })).sort((a, b) => a.first - b.first).map(({ first, ...g }) => g)
@@ -988,6 +997,10 @@ function install (injector) {
         const running = subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length
         if (running) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-run', textContent: `${running} running` }))
+        }
+        const compacting = subtree(g.name).filter(t => t.__tgInfo?.agent?.compacting).length
+        if (compacting) {
+            countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-cmp', textContent: `${compacting} compacting` }))
         }
         if (roll) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll', textContent: roll }))
@@ -1563,6 +1576,7 @@ function install (injector) {
             if (sessionId !== (info.sessionId ?? null)) {
                 info.sessionId = sessionId
                 setAsking(term, sessionId ? readAsking(sessionId) : null)
+                setCompacting(term, sessionId ? readCompacting(sessionId) : null)
             }
             setBackground(term, app === 'claude' ? taskShells(procs, appProc.pid) : [])
         }
@@ -1658,8 +1672,9 @@ function install (injector) {
         }
         const t = top(term)
         info.agent = state && {
-            state, since: Date.now(), needsYou: state === 'waiting' && prev?.state === 'busy' && !lookedAt(t),
-            asking: info.asking ?? null, background: state === 'busy' ? null : info.background ?? null,
+            // Asking replaces "needs you": a tab that asks shows only that.
+            state, since: Date.now(), needsYou: state === 'waiting' && prev?.state === 'busy' && !info.asking && !lookedAt(t),
+            asking: info.asking ?? null, background: state === 'busy' ? null : info.background ?? null, compacting: info.compacting ?? null,
         }
         syncAgent(t)
     }
@@ -1684,17 +1699,51 @@ function install (injector) {
             return
         }
         info.asking = asking
-        info.agent = info.agent ? { ...info.agent, asking } : asking && { state: 'waiting', since: asking.since, needsYou: false, asking }
+        info.agent = info.agent
+            ? { ...info.agent, asking, needsYou: info.agent.needsYou && !asking }
+            : asking && { state: 'waiting', since: asking.since, needsYou: false, asking, compacting: info.compacting ?? null }
         syncAgent(top(pane))
     }
-    let askingWatch = null
-    try {
-        require('fs').mkdirSync(askingDir, { recursive: true })
-        askingWatch = require('fs').watch(askingDir, (event, file) => {
-            const id = file?.replace(/\.json$/, '')
-            app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => id && p.__tgInfo?.sessionId === id).forEach(p => setAsking(p, readAsking(id)))
-        })
-    } catch { }
+    /*
+     * "Compacting": the same plugin's PreCompact hook writes <config>/tabby-groups/compacting/<session id>.json, and
+     * PostCompact removes it. A file older than 10 minutes is stale (Claude died mid-compaction).
+     */
+    const compactingDir = require('path').join(require('path').dirname(askingDir), 'compacting')
+    const COMPACT_MAX = 10 * 60e3
+    function readCompacting (sessionId) {
+        try {
+            const c = JSON.parse(require('fs').readFileSync(require('path').join(compactingDir, sessionId + '.json'), 'utf8'))
+            return Date.now() - c.since < COMPACT_MAX ? { trigger: c.trigger === 'auto' ? 'auto' : 'manual', since: c.since } : null
+        } catch {
+            return null
+        }
+    }
+    function setCompacting (pane, compacting) {
+        const info = pane.__tgInfo
+        if (!info || JSON.stringify(info.compacting ?? null) === JSON.stringify(compacting)) {
+            return
+        }
+        clearTimeout(pane.__tgCmpTimer)
+        if (compacting) {
+            pane.__tgCmpTimer = setTimeout(() => setCompacting(pane, null), compacting.since + COMPACT_MAX - Date.now())
+        }
+        info.compacting = compacting
+        info.agent = info.agent
+            ? { ...info.agent, compacting }
+            : compacting && { state: 'busy', since: compacting.since, needsYou: false, asking: info.asking ?? null, compacting }
+        syncAgent(top(pane))
+    }
+    const stateWatches = [[askingDir, (p, id) => setAsking(p, readAsking(id))], [compactingDir, (p, id) => setCompacting(p, readCompacting(id))]].map(([dir, apply]) => {
+        try {
+            require('fs').mkdirSync(dir, { recursive: true })
+            return require('fs').watch(dir, (event, file) => {
+                const id = file?.replace(/\.json$/, '')
+                app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => id && p.__tgInfo?.sessionId === id).forEach(p => apply(p, id))
+            })
+        } catch {
+            return null
+        }
+    })
 
     /*
      * "Running in background", from the process tree only. Claude runs a Bash command as its direct child
@@ -1726,7 +1775,7 @@ function install (injector) {
         const shown = info.agent?.state === 'busy' ? null : info.background
         info.agent = info.agent
             ? { ...info.agent, background: shown }
-            : shown && { state: 'waiting', since: Date.now(), needsYou: false, asking: info.asking ?? null, background: shown }
+            : shown && { state: 'waiting', since: Date.now(), needsYou: false, asking: info.asking ?? null, background: shown, compacting: info.compacting ?? null }
         syncAgent(top(pane))
     }
 
@@ -1737,12 +1786,14 @@ function install (injector) {
     function syncAgent (t) {
         const panes = (t.getAllTabs?.() ?? [t]).map(p => p.__tgInfo?.agent).filter(Boolean)
         const busy = panes.filter(a => a.state === 'busy')
+        const asking = panes.find(a => a.asking)?.asking ?? null
         const agent = panes.length ? {
             state: busy.length ? 'busy' : 'waiting',
             since: Math.max(...(busy.length ? busy : panes).map(a => a.since)),
-            needsYou: panes.some(a => a.needsYou),
-            asking: panes.find(a => a.asking)?.asking ?? null,
+            needsYou: !asking && panes.some(a => a.needsYou),
+            asking,
             background: busy.length ? null : mergeBackground(panes.map(a => a.background).filter(Boolean)),
+            compacting: panes.find(a => a.compacting)?.compacting ?? null,
         } : null
         // A split tab keeps the roll-up of its panes; a single pane already holds its own.
         if (!(t.getAllTabs?.() ?? [t]).includes(t)) {
@@ -1820,6 +1871,7 @@ function install (injector) {
         clearTimeout(term.__tgTimer)
         clearTimeout(term.__tgLateTimer)
         clearTimeout(term.__tgBgTimer)
+        clearTimeout(term.__tgCmpTimer)
         delete term.__tgWatched
     }
 
@@ -1884,6 +1936,13 @@ function install (injector) {
             bgEl.dataset.tgTip = `Running in background: ${agent.background.labels.length ? agent.background.labels.join(', ') : agent.background.count + ' task' + (agent.background.count === 1 ? '' : 's')}`
         } else {
             bgEl?.remove()
+        }
+        let cmpEl = iconEl?.querySelector(':scope > .tg-compact')
+        if (iconEl && agent?.compacting) {
+            cmpEl ??= iconEl.appendChild(Object.assign(document.createElement('span'), { className: 'tg-compact', innerHTML: '<i class="fas fa-compress-alt"></i>' }))
+            cmpEl.dataset.tgTip = `Compacting context (${agent.compacting.trigger})`
+        } else {
+            cmpEl?.remove()
         }
         // A tab pinned inside its group shows a pin where Tabby shows its own (between the number and the icon).
         let pinEl = el.querySelector(':scope > .tg-tab-pin')
@@ -2281,7 +2340,7 @@ function install (injector) {
         hideTip()
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
-        askingWatch?.close()
+        stateWatches.forEach(w => w?.close())
         userIconsWatch?.close()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
