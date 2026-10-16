@@ -214,13 +214,21 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 }
 .tg-roll-cmp { color: #d7cff9; }
 /* The user's toolbar buttons (tabby-groups.json "buttons"), before Tabby's own right-hand buttons. */
-.tg-buttons { display: flex; }
+.tg-buttons { display: flex; flex: none; }
 .tg-buttons > .btn { height: 38px; }
 .tg-button { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .tg-button > svg, .tg-button > .tg-emoji { width: 14px; height: 14px; }
 .tg-button > .tg-emoji { font-size: 12px; line-height: 14px; text-align: center; }
-.tg-button.tg-update { color: #8ef58a; width: auto; padding: 0 8px; }
-.tg-button-x { width: auto; padding: 0 8px; }
+/* An update: the icon in green with a dot, and a narrow ✕ beside it. */
+.tg-button.tg-update { color: #8ef58a; position: relative; }
+.tg-button.tg-update::after {
+    content: ''; position: absolute; top: 8px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #8ef58a;
+    box-shadow: 0 0 0 2px var(--theme-bg-more-2, #0d0d0d);
+}
+.tabs.tg-light.tg-light ~ * .tg-button.tg-update { color: #1d6b2c; }
+.tabs.tg-light.tg-light ~ * .tg-button.tg-update::after { background: #1d6b2c; }
+.tg-button-x { width: 20px; min-width: 0; padding: 0; font-size: 11px; opacity: .6; }
+.tg-button-x:hover { opacity: 1; }
 .tg-tip .tooltip-inner { white-space: pre-line; text-align: left; }
 .tabs.tg-light.tg-light .tg-roll-cmp { color: #5b3fa8; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */
@@ -305,7 +313,7 @@ function install (injector) {
     const titleOf = tab => tab.customTitle || tab.title
     const changed = () => app.emitTabsChanged()
     const IS_WIN = process.platform === 'win32'
-    /** The shell of Tabby's default profile (Settings > Terminal > Default profile), or null when it is not a local shell. */
+    /** The shell of Tabby's default profile (Settings → Profiles & connections → Default profile), or null when it is not a local shell. */
     async function defaultShell () {
         const id = injector.get(core.ConfigService).store.terminal?.profile
         const profile = (await injector.get(core.ProfilesService).getProfiles()).find(p => p.id === id)
@@ -1612,12 +1620,12 @@ function install (injector) {
             btn.append(b.emoji || b.path || b.paths
                 ? drawIcon({ emoji: b.emoji, path: b.path, paths: b.paths, stroke: !!b.stroke, color: b.color ?? 'currentColor' })
                 : Object.assign(document.createElement('i'), { className: `fas fa-${b.icon || 'terminal'}` }))
-            btn.dataset.tgTip = b.check ? `${b.label}\n${out}` : b.label
+            // One icon at any side-bar width: "Update available" and the check's lines live in the tooltip.
+            btn.dataset.tgTip = b.check ? `Update available: ${b.label}\n${out}` : b.label
             btn.addEventListener('click', () => pressButton(b))
             if (!b.check) {
                 return [btn]
             }
-            btn.append(Object.assign(document.createElement('span'), { className: 'tg-button-text', textContent: 'Update available' }))
             const x = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button-x', textContent: '✕' })
             x.dataset.tgTip = 'Dismiss until something new'
             x.addEventListener('click', () => {
