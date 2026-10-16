@@ -94,16 +94,28 @@ The flag works only when Tabby starts. If Tabby already runs, quit it (Cmd+Q) fi
 
 Tabby loads the plugin at start. Ask the user to quit Tabby and start it as in step 4. Do not quit it yourself: this session can run inside Tabby.
 
-Then ask the user to set, in Tabby's **Settings**:
+Then ask the user: "Apply the recommended Tabby settings?" On yes, run the setup script while Tabby runs. It saves through Tabby itself, changes only settings that still have Tabby's default, and prints each setting as before → after:
 
-| Setting | Value | Why |
+```powershell
+# Windows
+$path = (Get-Content "$env:USERPROFILE\.claude\plugins\installed_plugins.json" | ConvertFrom-Json).plugins.PSObject.Properties | Where-Object Name -like 'tabby-groups@*' | ForEach-Object { $_.Value[0].installPath } | Select-Object -First 1
+node "$path\scripts\tabby-setup.mjs" --port 9222
+```
+
+```sh
+# macOS
+plugin=$(node -e "const p=require(process.env.HOME+'/.claude/plugins/installed_plugins.json').plugins;console.log(p[Object.keys(p).find(k=>k.startsWith('tabby-groups@'))][0].installPath)")
+node "$plugin/scripts/tabby-setup.mjs" --port 9222
+```
+
+Add `--dry-run` to see the changes without saving them. Exit code 2 means the port is closed: the script prints the manual steps instead. On no, or by hand, the settings are:
+
+| Setting (in Tabby's Settings) | Value | Why |
 | --- | --- | --- |
-| Appearance > Tabs location | Left or Right | The groups show only in a side tab bar |
-| Terminal > Default profile | The shell the user's Claude setup expects | New tabs, and Claude Code tabs resumed after a restart, use this profile |
-
-For the default profile:
-- On Windows, PowerShell Core when PowerShell 7 is installed. Windows PowerShell 5.1 cannot read a PowerShell 7 profile.
-- On macOS, zsh, which is the system default, unless the user's tools need PowerShell 7.
+| Window → Tabs → Tabs location | Left or Right | The groups show only in a side tab bar |
+| Profiles & connections → Default profile | Windows: PowerShell Core (PowerShell 7), if installed; macOS: zsh | New tabs, and Claude Code tabs resumed after a restart, use this profile. Windows PowerShell 5.1 cannot read a PowerShell 7 profile. |
+| Color scheme | deep, if it is still "Tabby Default" | The recommended dark scheme; a scheme the user chose stays |
+| Appearance → Custom CSS | add `.activity-indicator { display: none !important; }` | Hides Tabby's activity dot; the plugin shows its own state marks |
 
 Do not edit Tabby's `config.yaml` while Tabby runs: Tabby overwrites it.
 
