@@ -36,6 +36,14 @@ const cases = [
   ['last_assistant_message field when present', () => hook('Stop', { last_assistant_message: 'Ready to commit?' }, [assistant('Done.')]), 'question/text'],
   ['session end clears', () => hook('SessionEnd'), 'none'],
   ['missing transcript is not a question', () => hook('Stop', { transcript_path: path.join(dir, 'missing.jsonl') }), 'none'],
+  ['question before a subagent tool', () => hook('Stop', {}, [assistant('❓ Waiting on you: which color?')]), 'question/text'],
+  ['subagent tool keeps the parent question', () => hook('PostToolUse', { tool_name: 'Bash', agent_id: 'a1' }), 'question/text'],
+  ['subagent permission', () => hook('PermissionRequest', { tool_name: 'Bash', agent_id: 'a1' }), 'permission'],
+  ['another subagent keeps it', () => hook('PostToolUse', { tool_name: 'Read', agent_id: 'a2' }), 'permission'],
+  ['that subagent tool ran brings the parent question back', () => hook('PostToolUse', { tool_name: 'Bash', agent_id: 'a1' }), 'question/text'],
+  ['parent prompt clears', () => hook('UserPromptSubmit'), 'none'],
+  ['lone subagent permission', () => hook('PermissionRequest', { tool_name: 'Bash', agent_id: 'a3' }), 'permission'],
+  ['its tool ran clears', () => hook('PostToolUse', { tool_name: 'Bash', agent_id: 'a3' }), 'none'],
 ];
 let bad = 0;
 for (const [name, run, want] of cases) {

@@ -291,7 +291,7 @@ function install (injector) {
             asking: subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length,
             running: subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length,
             compacting: subtree(g.name).filter(t => t.__tgInfo?.agent?.compacting).length,
-            busy: subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy').length,
+            busy: subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length,
             first: app.tabs.indexOf(subtree(g.name)[0]),
         })).sort((a, b) => a.first - b.first).map(({ first, ...g }) => g)
     }
@@ -727,7 +727,7 @@ function install (injector) {
         const countEl = h.querySelector('.tg-count')
         countEl.textContent = `${count} ${count === 1 ? 'tab' : 'tabs'}`
         const needs = subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length
-        const busy = subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy').length
+        const busy = subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length
         const roll = [needs && `${needs} ${needs === 1 ? 'needs' : 'need'} you`, busy && `${busy} busy`].filter(Boolean).join(' · ')
         const asks = subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length
         if (asks) {
@@ -1388,7 +1388,8 @@ function install (injector) {
         }
         const agent = tab.__tgInfo?.agent ?? info?.agent
         const asking = agent?.asking?.kind
-        iconEl?.classList.toggle('tg-busy', agent?.state === 'busy')
+        // Asking replaces the busy ring too: Claude keeps its spinner title while a subagent runs after it asked.
+        iconEl?.classList.toggle('tg-busy', agent?.state === 'busy' && !asking)
         iconEl?.classList.toggle('tg-needs', !!agent?.needsYou && !asking)
         iconEl?.classList.toggle('tg-ask', !!asking)
         if (iconEl) {

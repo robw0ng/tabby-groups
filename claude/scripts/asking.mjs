@@ -54,12 +54,22 @@ const state = event === 'PreToolUse' && hook.tool_name === 'AskUserQuestion' ? {
 
 const dir = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'tabby-groups', 'asking');
 const file = path.join(dir, id + '.json');
+// A subagent's events carry its agent_id and the parent's session_id. They must not clear the parent's question; a
+// subagent's own permission prompt is recorded with its id over the record it replaced ("under"), and only that
+// subagent's next event takes it off again, which brings back what was under it.
+const agent = hook.agent_id;
+let current = null;
+try { current = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { }
+const write = record => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(file, JSON.stringify(record)); };
 try {
-  if (state) {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ ...state, since: Date.now() }));
-  } else {
+  if (state && agent) {
+    write({ ...state, since: Date.now(), agent, under: current?.agent === agent ? current.under : current ?? undefined });
+  } else if (state) {
+    write({ ...state, since: Date.now() });
+  } else if (!agent) {
     fs.rmSync(file, { force: true });
+  } else if (current?.agent === agent) {
+    current.under ? write(current.under) : fs.rmSync(file, { force: true });
   }
 } catch { }
 // A hook never blocks Claude: no output, exit 0.
