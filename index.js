@@ -1063,13 +1063,6 @@ function install (injector) {
         return params
     }
 
-    /**
-     * The command that brings a Claude Code or Codex session back after Tabby restarts (Tabby restores the shell and its
-     * screen text, never the program). Keeps every launch flag of the original command (several --add-dir, the permission
-     * mode, the model, …); drops the first prompt and the old resume, continue, name and print flags. A known session id
-     * wins over the name, and --continue ("latest session in this folder") is the last resort: several sessions can share a folder.
-     */
-
     // Types the resume command once the restored pane's shell is ready (whenever its tab is first shown). Until then the
     // command stays the pane's resume, so a restart before the tab was opened still brings the session back later.
     async function resumeLater (pane, command) {
@@ -1284,9 +1277,6 @@ function install (injector) {
         queueRender()
     }
 
-
-
-
     const agentState = createAgent({ app, top, queueRender, inspect, isDisposed: () => disposed })
     const { updateAgent, readAsking, setAsking, readCompacting, setCompacting, setBackground, markSeen } = agentState
     function onWindowFocus () {
@@ -1308,7 +1298,6 @@ function install (injector) {
             term.__tgWatched = true
             // Until the shell runs, show the folder Tabby will start it in (a restored tab's last folder).
             term.__tgInfo ??= { kind: profileKind(term), cwd: term.profile?.options?.cwd || null }
-            // A restored pane brings its resume command as a tab input.
             if (term.__tgResume) {
                 resumeLater(term, term.__tgResume)
                 delete term.__tgResume
@@ -1560,7 +1549,6 @@ function install (injector) {
     function onDragMove (e) {
         const row = rowAt(e.clientX, e.clientY)
         dropIntent = null
-        // A dragged group cannot land among its own rows.
         const own = row && draggedGroup && (row.matches('tab-header') ? inGroup(tabOfRow(row), draggedGroup.name) : chainOf(row.dataset.group).includes(draggedGroup))
         if (row && !row.matches('.cdk-drag-placeholder') && !own) {
             const r = row.getBoundingClientRect()
@@ -1656,7 +1644,7 @@ function install (injector) {
         const place = (anchor, after) => placeTab(tab, anchor, after)
         const others = g => subtree(g.name).filter(t => t !== tab)
         if (i.where === 'onto') {
-            // Two tabs make a new group, like an iPhone folder: at the top level, or as a subgroup where the target tab is.
+            // Two tabs make a new group: at the top level, or as a subgroup where the target tab is.
             const g = ensureGroup(newGroupName(), { parent: i.tab.__tg ?? null })
             // A new top-level group made on a pinned tab stays pinned, so the tab keeps its pin.
             g.pinned = !g.parent && !!i.tab.pinned

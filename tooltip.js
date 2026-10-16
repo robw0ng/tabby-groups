@@ -1,8 +1,6 @@
 /** Tooltips for any element with data-tg-tip, in Tabby's own tooltip look. */
 function createTooltip () {
-    // Group headers get Tabby's own tooltip look (Bootstrap's "tooltip bs-tooltip-top", as ngbTooltip renders for tabs),
-    // centred above the header, instead of the browser's title box.
-    // Shown only after the pointer rests on the header for a moment, like a tab's tooltip.
+    // Bootstrap's "tooltip bs-tooltip-top", as ngbTooltip renders a tab's; shown after the same short rest.
     const TIP_DELAY = 500
     let tipEl = null
     let tipHost = null

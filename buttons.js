@@ -63,7 +63,7 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed }) {
      * A button with a check is an update: its command runs in the background from Tabby's own process, the icon spins, and
      * a toast tells the result. The full output goes to a log file the toast can open. If the command's last line is a JSON
      * object, "problems" (lines to look at) and "reload" (Tabby plugins that changed) shape the toast, and every other
-     * non-empty field is shown as a line. A button without a check opens a tab, as before.
+     * non-empty field is shown as a line. A button without a check opens a tab.
      */
     const running = new Set()
     const buttonLog = b => require('path').join(require('os').tmpdir(), 'tabby-groups', `button-${sha1(b.label).slice(0, 8)}.log`)
@@ -89,7 +89,7 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed }) {
                 return
             }
             const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
-            // Done: the update the check reported is applied; hide the button until the check runs again.
+            // The update the check reported is applied: hide the button until the check runs again.
             if (code === 0) {
                 buttonState.delete(b.label)
             }
