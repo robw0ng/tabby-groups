@@ -1544,8 +1544,8 @@ function install (injector) {
                 const tree = IS_WIN
                     ? await new Promise(resolve => processTree.getProcessTree(pid, resolve, processTree.ProcessDataFlag.CommandLine))
                     : await psTree(pid)
-                const walk = n => n ? [n, ...n.children.flatMap(walk)] : []
-                procs = walk(tree).map(n => ({ pid: n.pid, name: n.name.toLowerCase(), cmd: (n.commandLine ?? '').toLowerCase(), raw: n.commandLine ?? '' }))
+                const walk = (n, ppid) => n ? [{ pid: n.pid, ppid, name: n.name.toLowerCase(), cmd: (n.commandLine ?? '').toLowerCase(), raw: n.commandLine ?? '' }, ...n.children.flatMap(c => walk(c, n.pid))] : []
+                procs = walk(tree, null)
             }
         } catch { }
         const [app, appProc] = APPS.map(([kind, test]) => [kind, procs.slice(1).find(test)]).find(([, p]) => p) ?? []
@@ -1564,9 +1564,7 @@ function install (injector) {
                 info.sessionId = sessionId
                 setAsking(term, sessionId ? readAsking(sessionId) : null)
             }
-            if (sessionId) {
-                trackTasks(sessionId)
-            }
+            setBackground(term, app === 'claude' ? taskShells(procs, appProc.pid) : [])
         }
 
         // The OS knows the real folder of an app, of cmd, and of a macOS or Linux shell. PowerShell and Git Bash on Windows
@@ -1699,102 +1697,32 @@ function install (injector) {
     } catch { }
 
     /*
-     * "Running in background": a Claude Bash task started with run_in_background writes <temp>/claude/<project>/<session
-     * id>/tasks/b<id>.output and holds the file open until it ends (on Windows exclusively, so an exclusive open fails);
-     * finished files stay. The session's tasks folder is watched for new files, and files still held are checked every 3 s
-     * until none is left. Claude's foreground commands hold their file too, so the state shows only while Claude is not busy.
+     * "Running in background", from the process tree only. Claude runs a Bash command as its direct child
+     * `bash -c "source …/shell-snapshots/… eval '<command>' …"`, and a PowerShell command as `cmd /c "… pwsh … -Command …
+     * CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT …"`. Such a child alive while Claude is not busy is a background task; it exits
+     * with the task, while a daemon the task left behind is no such child. Never open a task's output file to test it: an
+     * exclusive open breaks Claude's own read of that file (EBUSY).
      */
-    const fsx = require('fs'), pathx = require('path')
-    const tasksRoot = pathx.join(require('os').tmpdir(), 'claude')
-    const tasksDirs = new Map()
-    function tasksDirOf (sessionId) {
-        if (!tasksDirs.has(sessionId)) {
-            try {
-                const dir = fsx.readdirSync(tasksRoot).map(p => pathx.join(tasksRoot, p, sessionId, 'tasks')).find(d => fsx.existsSync(d))
-                if (dir) {
-                    tasksDirs.set(sessionId, dir)
-                }
-            } catch { }
-        }
-        return tasksDirs.get(sessionId) ?? null
+    const taskShells = (procs, claudePid) => procs.filter(p => p.ppid === claudePid && (
+        (/^(ba|z)?sh(\.exe)?$/.test(p.name) && p.raw.includes('shell-snapshots') && p.raw.includes("eval '"))
+        || p.raw.includes('CLAUDE_CODE_SHELL_LAUNCHER_SCRIPT')))
+    /** The task's command, from its eval '…' (Bash); a PowerShell command keeps its script in the environment. */
+    const taskLabel = p => {
+        const m = /eval '((?:[^']|'\\'')*)'/.exec(p.raw)
+        return m ? m[1].replace(/'\\''/g, "'").replace(/\s+/g, ' ').trim().slice(0, 24) : 'PowerShell'
     }
-    // Windows: libuv's UV_FS_O_EXLOCK (0x10000000), which Node 22 does not export; it fails with EBUSY while a task writes.
-    const EXCLUSIVE = fsx.constants.UV_FS_O_EXLOCK ?? 0x10000000
-    async function isHeld (file) {
-        if (!IS_WIN) {
-            return !!(await execText('lsof', ['-t', '--', file])).trim()
-        }
-        try {
-            fsx.closeSync(fsx.openSync(file, fsx.constants.O_RDONLY | EXCLUSIVE))
-            return false
-        } catch (e) {
-            return e.code === 'EBUSY' || e.code === 'EPERM'
-        }
-    }
-    const taskFiles = new Map()
-    const tasksWatches = new Map()
-    let tasksTimer = null
-    let tasksChecking = false
-    function trackTasks (sessionId) {
-        const dir = tasksDirOf(sessionId)
-        if (!dir || tasksWatches.has(dir)) {
-            return
-        }
-        try {
-            for (const f of fsx.readdirSync(dir).filter(f => /^b.*\.output$/.test(f))) {
-                const file = pathx.join(dir, f)
-                if (Date.now() - fsx.statSync(file).mtimeMs < 24 * 3600e3) {
-                    taskFiles.set(file, sessionId)
-                }
-            }
-            tasksWatches.set(dir, fsx.watch(dir, (event, f) => {
-                if (f && /^b.*\.output$/.test(f)) {
-                    taskFiles.set(pathx.join(dir, f), sessionId)
-                    checkTasks()
-                }
-            }))
-        } catch { }
-        checkTasks()
-    }
-    async function checkTasks () {
-        if (tasksChecking || disposed) {
-            return
-        }
-        tasksChecking = true
-        clearTimeout(tasksTimer)
-        const held = new Map()
-        for (const [file, sessionId] of [...taskFiles]) {
-            if (await isHeld(file)) {
-                held.set(sessionId, [...held.get(sessionId) ?? [], pathx.basename(file, '.output')])
-            } else {
-                taskFiles.delete(file)
-            }
-        }
-        app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => p.__tgInfo?.sessionId)
-            .forEach(p => setBackground(p, held.get(p.__tgInfo.sessionId) ?? []))
-        tasksChecking = false
-        if (taskFiles.size && !disposed) {
-            tasksTimer = setTimeout(checkTasks, 3000)
-        }
-    }
-    /** Optional task labels, written by claude-statusline: <config>/bg-tasks/<session id>/<task id>.json = { id, label }. */
-    function taskLabels (sessionId, ids) {
-        const dir = pathx.join(process.env.CLAUDE_CONFIG_DIR || pathx.join(require('os').homedir(), '.claude'), 'bg-tasks', sessionId)
-        return ids.map(id => {
-            try {
-                return JSON.parse(fsx.readFileSync(pathx.join(dir, id + '.json'), 'utf8')).label
-            } catch {
-                return null
-            }
-        }).filter(Boolean)
-    }
-    function setBackground (pane, ids) {
+    function setBackground (pane, tasks) {
         const info = pane.__tgInfo
-        const before = info.background?.ids?.join() ?? ''
-        if (before === ids.join()) {
+        const ids = tasks.map(t => String(t.pid))
+        // While a task lives, look again every 3 s, so the badge goes soon after it ends; nothing polls otherwise.
+        clearTimeout(pane.__tgBgTimer)
+        if (ids.length && !disposed) {
+            pane.__tgBgTimer = setTimeout(() => inspect(pane), 3000)
+        }
+        if ((info.background?.ids?.join() ?? '') === ids.join()) {
             return
         }
-        info.background = ids.length ? { count: ids.length, since: info.background?.since ?? Date.now(), ids, labels: taskLabels(info.sessionId, ids) } : null
+        info.background = ids.length ? { count: ids.length, since: info.background?.since ?? Date.now(), ids, labels: tasks.map(taskLabel) } : null
         const shown = info.agent?.state === 'busy' ? null : info.background
         info.agent = info.agent
             ? { ...info.agent, background: shown }
@@ -1891,6 +1819,7 @@ function install (injector) {
         delete term.__tgSubs
         clearTimeout(term.__tgTimer)
         clearTimeout(term.__tgLateTimer)
+        clearTimeout(term.__tgBgTimer)
         delete term.__tgWatched
     }
 
@@ -2353,8 +2282,6 @@ function install (injector) {
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
         askingWatch?.close()
-        tasksWatches.forEach(w => w.close())
-        clearTimeout(tasksTimer)
         userIconsWatch?.close()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
