@@ -17,6 +17,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | New tab | Double-click empty space, or click a group's +, to open a tab in that group |
 | Session icons | Claude Code, Codex, Gemini, Node, Python, Docker, Vim, SSH, PowerShell, cmd, Bash, WSL and more |
 | Your own icons | `tabby-groups.json` in Tabby's settings folder: `{ "icons": [{ "name", "title"?, "process"?, "color"?, "emoji" \| "path" \| "paths", "stroke"? }] }`. `title` and `process` are patterns for the tab title and a command line under the tab. Edits apply at once. |
+| Your own buttons | `"buttons": [{ "label", "command", "cwd"?, "icon"? (Font Awesome name) \| "emoji" \| "path" \| "paths", "check"?, "checkEveryMinutes"? }]` in the same file. A button sits before Tabby's own toolbar buttons; a click types `command` into a new tab that stays open. With `check`, the button shows "Update available" only while the check exits 10 (run at start and every `checkEveryMinutes`, default 30); its output is the tooltip, and ✕ hides it until that output changes. |
 | Folder line | Each tab shows its current folder under its title |
 | Claude Code state | A ring while Claude works; a dot when it finished while you were away; an amber "?" while it asks you a question and "!" while it asks for a permission (needs the Claude Code plugin's hooks). Group headers count all of them. |
 | Search | Matches titles, group names, folders, apps and tab numbers (`#12`). Enter opens the first match. |

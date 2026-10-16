@@ -211,6 +211,15 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
     box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
 }
 .tg-roll-cmp { color: #d7cff9; }
+/* The user's toolbar buttons (tabby-groups.json "buttons"), before Tabby's own right-hand buttons. */
+.tg-buttons { display: flex; }
+.tg-buttons > .btn { height: 38px; }
+.tg-button { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.tg-button > svg, .tg-button > .tg-emoji { width: 14px; height: 14px; }
+.tg-button > .tg-emoji { font-size: 12px; line-height: 14px; text-align: center; }
+.tg-button.tg-update { color: #8ef58a; width: auto; padding: 0 8px; }
+.tg-button-x { width: auto; padding: 0 8px; }
+.tg-tip .tooltip-inner { white-space: pre-line; text-align: left; }
 .tabs.tg-light.tg-light .tg-roll-cmp { color: #5b3fa8; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */
 .tabs-on-left .tabs > tab-header > .pin-indicator, .tabs-on-right .tabs > tab-header > .pin-indicator { margin: 0 0 0 10px !important; align-self: center; color: #d0d0d0 !important; opacity: 1 !important; }
@@ -811,6 +820,10 @@ function install (injector) {
         }
         if (!handle.isConnected) {
             document.body.appendChild(handle)
+        }
+        // Tabby can recreate its toolbar too: put the user's buttons back.
+        if (userButtons.length && !buttonsEl.isConnected) {
+            renderButtons()
         }
         placeHandle()
     }
@@ -1477,10 +1490,14 @@ function install (injector) {
         }
     })()
     let userIcons = []
+    let userButtons = []
     function loadUserIcons () {
         let rules = []
+        let buttonRules = []
         try {
-            rules = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8')).icons ?? []
+            const file = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8'))
+            rules = file.icons ?? []
+            buttonRules = file.buttons ?? []
         } catch (e) {
             if (e.code !== 'ENOENT') {
                 console.warn('tabby-groups: cannot read', userIconsFile, e.message)
@@ -1500,9 +1517,121 @@ function install (injector) {
                 return []
             }
         })
+        userButtons = buttonRules.filter(b => {
+            const ok = b?.label && b.command && (!b.icon || /^[a-z0-9-]+$/.test(b.icon))
+            if (!ok) {
+                console.warn('tabby-groups: button skipped', b?.label, 'needs label and command; icon is a Font Awesome name')
+            }
+            return ok
+        })
         userIconsVersion++
         app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => p.__tgInfo).forEach(p => queueInspect(p, 100))
+        scheduleChecks()
+        renderButtons()
     }
+    /*
+     * The user's toolbar buttons: tabby-groups.json "buttons": [{ "label", "command", "cwd"?, "check"?, "checkEveryMinutes"?,
+     * and an icon: "icon" (a Font Awesome name such as "sync"), or "emoji", or "path"/"paths" (+ "stroke", "color") as in
+     * "icons" }]. A click types the command into a new tab that stays open. With "check", the button shows only while the
+     * check (run from Tabby's own process at start and every checkEveryMinutes, default 30) exits 10; its stdout is the
+     * tooltip, and ✕ hides it until that stdout changes. Exit 0 means nothing new; any other exit is logged.
+     * Tabby reads its own toolbar once at start, so the plugin draws these buttons itself.
+     */
+    const buttonState = new Map()
+    let buttonTimers = []
+    const sha1 = s => require('crypto').createHash('sha1').update(s).digest('hex')
+    const dismissKey = b => 'tabby-groups:dismissed:' + sha1(b.label)
+    function runCheck (b) {
+        // On Windows a piped console program writes in the OEM code page unless the console is set to UTF-8.
+        const command = IS_WIN ? `chcp 65001 >nul & ${b.check}` : b.check
+        require('child_process').exec(command, { cwd: b.cwd || require('os').homedir(), timeout: 5 * 60e3, windowsHide: true }, (err, stdout, stderr) => {
+            const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
+            if (code !== 0 && code !== 10) {
+                console.warn('tabby-groups: button check failed', b.label, code, String(stderr || err?.message).trim())
+            }
+            buttonState.set(b, code === 10 ? stdout.replace(/\r/g, '').trim() : null)
+            renderButtons()
+        })
+    }
+    function scheduleChecks () {
+        buttonTimers.forEach(clearInterval)
+        buttonState.clear()
+        buttonTimers = userButtons.filter(b => b.check).map(b => {
+            runCheck(b)
+            return setInterval(() => runCheck(b), Math.max(1, +b.checkEveryMinutes || 30) * 60e3)
+        })
+    }
+    /** Waits until the command typed into a button's tab ends (the shell has had a child and has none again), 30 min at most. */
+    async function whenCommandEnds (term) {
+        let seen = false
+        for (let i = 0; i < 600 && !disposed; i++) {
+            await new Promise(r => setTimeout(r, 3000))
+            if (!app.tabs.some(t => (t.getAllTabs?.() ?? [t]).includes(term))) {
+                return
+            }
+            await inspect(term)
+            const n = term.__tgInfo?.procCount ?? 0
+            if (n > 1) {
+                seen = true
+            } else if (seen) {
+                return
+            }
+        }
+    }
+    async function pressButton (b) {
+        const n = await open({ title: b.label, cwd: b.cwd || require('os').homedir(), run: b.command })
+        if (b.check) {
+            const tab = app.tabs[n - 1]
+            await whenCommandEnds(tab?.getAllTabs?.()[0] ?? tab)
+            runCheck(b)
+        }
+    }
+    const buttonsEl = Object.assign(document.createElement('div'), { className: 'tg-buttons' })
+    function renderButtons () {
+        const bar = [...document.querySelectorAll('.tab-bar > .btn-group.background')].pop()
+        const shown = userButtons.filter(b => {
+            const out = buttonState.get(b)
+            if (!b.check) {
+                return true
+            }
+            let dismissed = null
+            try {
+                dismissed = localStorage.getItem(dismissKey(b))
+            } catch { }
+            return out != null && dismissed !== sha1(out)
+        })
+        if (!bar || !shown.length) {
+            buttonsEl.remove()
+            return
+        }
+        buttonsEl.replaceChildren(...shown.flatMap(b => {
+            const out = buttonState.get(b)
+            const btn = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button' + (b.check ? ' tg-update' : '') })
+            btn.append(b.emoji || b.path || b.paths
+                ? drawIcon({ emoji: b.emoji, path: b.path, paths: b.paths, stroke: !!b.stroke, color: b.color ?? 'currentColor' })
+                : Object.assign(document.createElement('i'), { className: `fas fa-${b.icon || 'terminal'}` }))
+            btn.dataset.tgTip = b.check ? `${b.label}\n${out}` : b.label
+            btn.addEventListener('click', () => pressButton(b))
+            if (!b.check) {
+                return [btn]
+            }
+            btn.append(Object.assign(document.createElement('span'), { className: 'tg-button-text', textContent: 'Update available' }))
+            const x = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button-x', textContent: '✕' })
+            x.dataset.tgTip = 'Dismiss until something new'
+            x.addEventListener('click', () => {
+                try {
+                    localStorage.setItem(dismissKey(b), sha1(out))
+                } catch { }
+                hideTip()
+                renderButtons()
+            })
+            return [btn, x]
+        }))
+        if (buttonsEl.parentElement !== bar) {
+            bar.prepend(buttonsEl)
+        }
+    }
+    const buttons = () => userButtons.map(b => ({ label: b.label, shown: buttonsEl.isConnected && [...buttonsEl.children].some(c => c.dataset.tgTip?.startsWith(b.label)) }))
     let userIconsVersion = 0
     let userIconsWatch = null
     const iconOf = kind => ICONS[kind] ?? userIcons.find(u => u.kind === kind)
@@ -1559,6 +1688,7 @@ function install (injector) {
                     : await psTree(pid)
                 const walk = (n, ppid) => n ? [{ pid: n.pid, ppid, name: n.name.toLowerCase(), cmd: (n.commandLine ?? '').toLowerCase(), raw: n.commandLine ?? '' }, ...n.children.flatMap(c => walk(c, n.pid))] : []
                 procs = walk(tree, null)
+                info.procCount = procs.length
             }
         } catch { }
         const [app, appProc] = APPS.map(([kind, test]) => [kind, procs.slice(1).find(test)]).find(([, p]) => p) ?? []
@@ -2342,6 +2472,8 @@ function install (injector) {
         observer.disconnect()
         stateWatches.forEach(w => w?.close())
         userIconsWatch?.close()
+        buttonTimers.forEach(clearInterval)
+        buttonsEl.remove()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
         if (i >= 0) {
@@ -2424,7 +2556,7 @@ function install (injector) {
 
     /** The user's icons from tabby-groups.json (tab kind "user:<name>"), for other front ends such as a phone side bar. */
     const icons = () => userIcons.map(({ title, process, ...icon }) => icon)
-    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, dispose }
+    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons, dispose }
     return window.__tabbyGroups
 }
 
