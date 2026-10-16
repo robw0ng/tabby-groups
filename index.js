@@ -57,7 +57,9 @@ const CSS = `
 .tg-add:hover { background: rgba(255, 255, 255, .08); }
 .tg-pin + .tg-add { margin-left: 4px; }
 /* Devices viewing a tab through tabby-remote; the same badge as its phone side bar. */
-.tg-presence { display: flex; align-items: center; gap: 4px; margin-left: 4px; flex: none; align-self: center; }
+.tg-presence { display: flex; align-items: center; gap: 4px; margin-left: 4px; flex: none; align-self: center; transition: margin-right .25s; }
+/* Tabby's hover buttons float over the row's right end: the badges step left of them, and the title gives way. */
+.tabs > tab-header:hover > .tg-presence { margin-right: var(--tg-btns, 52px); }
 .tg-badge {
     position: relative; width: 16px; height: 16px; border-radius: 50%; background: var(--tg-badge);
     color: #111; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
@@ -2125,6 +2127,10 @@ function install (injector) {
             }
             const buttons = el.querySelector(':scope > .buttons')
             buttons ? buttons.before(box) : el.append(box)
+        }
+        const btnsWidth = el.querySelector(':scope > .buttons')?.offsetWidth
+        if (box && btnsWidth && box.style.getPropertyValue('--tg-btns') !== btnsWidth + 'px') {
+            box.style.setProperty('--tg-btns', btnsWidth + 'px')
         }
     }
 
