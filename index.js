@@ -229,6 +229,21 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 .tabs.tg-light.tg-light ~ * .tg-button.tg-update::after { background: #1d6b2c; }
 .tg-button-x { width: 20px; min-width: 0; padding: 0; font-size: 11px; opacity: .6; }
 .tg-button-x:hover { opacity: 1; }
+.tg-button.tg-running > :first-child { animation: tg-spin 1s linear infinite; }
+.tg-button.tg-running::after { display: none; }
+/* The result of a background button run, above the toolbar. */
+.tg-toast {
+    position: fixed; z-index: 1000; min-width: 220px; padding: 10px 12px; border-radius: 8px;
+    background: var(--theme-bg-more, #1e1e1e); color: var(--theme-fg, #ddd); border: 1px solid rgba(127, 127, 127, .3);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .4); font-size: 13px;
+}
+.tg-toast-title { font-weight: 600; margin-bottom: 4px; }
+.tg-toast-line { opacity: .85; white-space: pre-wrap; word-break: break-word; }
+.tg-toast-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.tg-toast-btn { border: 1px solid rgba(127, 127, 127, .4); border-radius: 6px; background: transparent; color: inherit; padding: 2px 10px; cursor: pointer; }
+.tg-toast-btn:hover { background: rgba(127, 127, 127, .2); }
+.tg-toast-note { opacity: .7; }
+.tg-toast-x { margin-left: auto; padding: 2px 8px; }
 .tg-tip .tooltip-inner { white-space: pre-line; text-align: left; }
 .tabs.tg-light.tg-light .tg-roll-cmp { color: #5b3fa8; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */
@@ -1551,10 +1566,22 @@ function install (injector) {
     let buttonTimers = []
     const sha1 = s => require('crypto').createHash('sha1').update(s).digest('hex')
     const dismissKey = b => 'tabby-groups:dismissed:' + sha1(b.label)
+    /**
+     * Runs a button's command line from Tabby's own process. Windows: cmd, with the console in UTF-8 (a piped console
+     * program writes in the OEM code page otherwise). macOS and Linux: the user's login shell, because a Tabby started
+     * from the Dock has launchd's bare PATH (no Homebrew, no npm globals).
+     */
+    function runShell (commandLine, { cwd, timeout }, done) {
+        const opts = { cwd: cwd || require('os').homedir(), timeout, maxBuffer: 64 << 20, windowsHide: true }
+        const cp = require('child_process')
+        if (IS_WIN) {
+            cp.exec(`chcp 65001 >nul & ${commandLine}`, opts, done)
+        } else {
+            cp.execFile(process.env.SHELL || '/bin/zsh', ['-lc', commandLine], opts, done)
+        }
+    }
     function runCheck (b) {
-        // On Windows a piped console program writes in the OEM code page unless the console is set to UTF-8.
-        const command = IS_WIN ? `chcp 65001 >nul & ${b.check}` : b.check
-        require('child_process').exec(command, { cwd: b.cwd || require('os').homedir(), timeout: 5 * 60e3, windowsHide: true }, (err, stdout, stderr) => {
+        runShell(b.check, { cwd: b.cwd, timeout: 5 * 60e3 }, (err, stdout, stderr) => {
             const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
             if (code !== 0 && code !== 10) {
                 console.warn('tabby-groups: button check failed', b.label, code, String(stderr || err?.message).trim())
@@ -1571,29 +1598,110 @@ function install (injector) {
             return setInterval(() => runCheck(b), Math.max(1, +b.checkEveryMinutes || 30) * 60e3)
         })
     }
-    /** Waits until the command typed into a button's tab ends (the shell has had a child and has none again), 30 min at most. */
-    async function whenCommandEnds (term) {
-        let seen = false
-        for (let i = 0; i < 600 && !disposed; i++) {
-            await new Promise(r => setTimeout(r, 3000))
-            if (!app.tabs.some(t => (t.getAllTabs?.() ?? [t]).includes(term))) {
-                return
-            }
-            await inspect(term)
-            const n = term.__tgInfo?.procCount ?? 0
-            if (n > 1) {
-                seen = true
-            } else if (seen) {
-                return
-            }
+    /*
+     * A button with a check is an update: its command runs in the background from Tabby's own process, the icon spins, and
+     * a toast tells the result. The full output goes to a log file the toast can open. If the command's last line is a JSON
+     * object, "problems" (lines to look at) and "reload" (Tabby plugins that changed) shape the toast, and every other
+     * non-empty field is shown as a line. A button without a check opens a tab, as before.
+     */
+    const running = new Set()
+    const buttonLog = b => require('path').join(require('os').tmpdir(), 'tabby-groups', `button-${sha1(b.label).slice(0, 8)}.log`)
+    function lastJson (stdout) {
+        const line = stdout.replace(/\r/g, '').trim().split('\n').pop() ?? ''
+        try {
+            const v = JSON.parse(line)
+            return v && typeof v === 'object' && !Array.isArray(v) ? v : null
+        } catch {
+            return null
         }
     }
-    async function pressButton (b) {
-        const n = await open({ title: b.label, cwd: b.cwd || require('os').homedir(), run: b.command })
+    function runInBackground (b) {
+        if (running.has(b)) {
+            return
+        }
+        running.add(b)
+        hideToast()
+        renderButtons()
+        runShell(b.command, { cwd: b.cwd, timeout: 30 * 60e3 }, (err, stdout, stderr) => {
+            running.delete(b)
+            const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
+            const log = buttonLog(b)
+            try {
+                require('fs').mkdirSync(require('path').dirname(log), { recursive: true })
+                require('fs').writeFileSync(log, `$ ${b.command}\n${new Date().toISOString()}\n\n${stdout}${stderr ? '\n--- stderr ---\n' + stderr : ''}\n--- exit ${code} ---\n`)
+            } catch { }
+            const json = lastJson(stdout)
+            const result = json ?? {}
+            const list = v => (Array.isArray(v) ? v : v ? [v] : []).map(String)
+            const problems = list(result.problems)
+            const reload = list(result.reload)
+            // A text field is a sentence of its own; a list gets its key as a label. Without JSON, the output's last lines.
+            const notes = json
+                ? Object.entries(result).filter(([k, v]) => !['problems', 'reload', 'sync'].includes(k) && list(v).length)
+                    .map(([k, v]) => (typeof v === 'string' ? v : `${k}: ${list(v).join(', ')}`))
+                : (stdout + stderr).replace(/\r/g, '').trim().split('\n').filter(Boolean).slice(-3)
+            if (code !== 0) {
+                showToast(`${b.label} failed (exit ${code})`, [...problems, ...notes], [['Open log', () => openLog(log)]])
+            } else if (problems.length) {
+                showToast(`${b.label}: ${problems.length} problem${problems.length === 1 ? '' : 's'}`, [...problems, ...notes], [['Open log', () => openLog(log)]])
+            } else if (reload.length) {
+                showToast(`${b.label}: updated`, [`Changed: ${reload.join(', ')}`, ...notes], reloadActions(reload, log))
+            } else {
+                showToast(`${b.label}: up to date ✓`, notes, [['Open log', () => openLog(log)]], notes.length ? 0 : 6000)
+            }
+            renderButtons()
+            if (b.check) {
+                runCheck(b)
+            }
+        })
+    }
+    /** Until plugins can reload in place: say a restart is needed. */
+    const reloadActions = (names, log) => [['Open log', () => openLog(log)], ['Restart Tabby to load them', null]]
+    function openLog (file) {
+        try {
+            require('@electron/remote').shell.openPath(file)
+        } catch (e) {
+            console.warn('tabby-groups: cannot open', file, e.message)
+        }
+    }
+    let toastEl = null
+    let toastTimer = null
+    function hideToast () {
+        clearTimeout(toastTimer)
+        toastEl?.remove()
+        toastEl = null
+    }
+    /** A small card above the toolbar buttons: a title, lines, and actions (an action without a function is plain text). */
+    function showToast (title, lines, actions = [], autoHide = 0) {
+        hideToast()
+        const bar = [...document.querySelectorAll('.tab-bar > .btn-group.background')].pop()?.getBoundingClientRect()
+        toastEl = Object.assign(document.createElement('div'), { className: 'tg-toast' })
+        toastEl.append(Object.assign(document.createElement('div'), { className: 'tg-toast-title', textContent: title }))
+        for (const l of lines) {
+            toastEl.append(Object.assign(document.createElement('div'), { className: 'tg-toast-line', textContent: l }))
+        }
+        const row = Object.assign(document.createElement('div'), { className: 'tg-toast-actions' })
+        for (const [label, fn] of actions) {
+            row.append(fn
+                ? Object.assign(document.createElement('button'), { className: 'tg-toast-btn', textContent: label, onclick: () => { hideToast(); fn() } })
+                : Object.assign(document.createElement('span'), { className: 'tg-toast-note', textContent: label }))
+        }
+        const close = Object.assign(document.createElement('button'), { className: 'tg-toast-btn tg-toast-x', textContent: '✕', onclick: hideToast })
+        row.append(close)
+        toastEl.append(row)
+        if (bar) {
+            Object.assign(toastEl.style, { left: Math.max(4, bar.left + 4) + 'px', bottom: Math.max(4, innerHeight - bar.top + 6) + 'px', maxWidth: Math.max(220, bar.width - 8) + 'px' })
+        }
+        document.body.append(toastEl)
+        if (autoHide) {
+            toastTimer = setTimeout(hideToast, autoHide)
+        }
+    }
+    function pressButton (b) {
         if (b.check) {
-            const tab = app.tabs[n - 1]
-            await whenCommandEnds(tab?.getAllTabs?.()[0] ?? tab)
-            runCheck(b)
+            runInBackground(b)
+        } else {
+            open({ title: b.label, cwd: b.cwd || require('os').homedir(), run: b.command })
         }
     }
     const buttonsEl = Object.assign(document.createElement('div'), { className: 'tg-buttons' })
@@ -1601,7 +1709,7 @@ function install (injector) {
         const bar = [...document.querySelectorAll('.tab-bar > .btn-group.background')].pop()
         const shown = userButtons.filter(b => {
             const out = buttonState.get(b)
-            if (!b.check) {
+            if (!b.check || running.has(b)) {
                 return true
             }
             let dismissed = null
@@ -1616,14 +1724,15 @@ function install (injector) {
         }
         buttonsEl.replaceChildren(...shown.flatMap(b => {
             const out = buttonState.get(b)
-            const btn = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button' + (b.check ? ' tg-update' : '') })
+            const busy = running.has(b)
+            const btn = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button' + (b.check ? ' tg-update' : '') + (busy ? ' tg-running' : '') })
             btn.append(b.emoji || b.path || b.paths
                 ? drawIcon({ emoji: b.emoji, path: b.path, paths: b.paths, stroke: !!b.stroke, color: b.color ?? 'currentColor' })
                 : Object.assign(document.createElement('i'), { className: `fas fa-${b.icon || 'terminal'}` }))
             // One icon at any side-bar width: "Update available" and the check's lines live in the tooltip.
-            btn.dataset.tgTip = b.check ? `Update available: ${b.label}\n${out}` : b.label
+            btn.dataset.tgTip = busy ? `${b.label}: running…` : b.check ? `Update available: ${b.label}\n${out}` : b.label
             btn.addEventListener('click', () => pressButton(b))
-            if (!b.check) {
+            if (!b.check || busy) {
                 return [btn]
             }
             const x = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button-x', textContent: '✕' })
@@ -1698,7 +1807,6 @@ function install (injector) {
                     : await psTree(pid)
                 const walk = (n, ppid) => n ? [{ pid: n.pid, ppid, name: n.name.toLowerCase(), cmd: (n.commandLine ?? '').toLowerCase(), raw: n.commandLine ?? '' }, ...n.children.flatMap(c => walk(c, n.pid))] : []
                 procs = walk(tree, null)
-                info.procCount = procs.length
             }
         } catch { }
         const [app, appProc] = APPS.map(([kind, test]) => [kind, procs.slice(1).find(test)]).find(([, p]) => p) ?? []
@@ -2488,6 +2596,7 @@ function install (injector) {
         userIconsWatch?.close()
         buttonTimers.forEach(clearInterval)
         buttonsEl.remove()
+        hideToast()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
         if (i >= 0) {
