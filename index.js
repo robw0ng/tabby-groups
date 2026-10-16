@@ -1475,8 +1475,12 @@ function install (injector) {
         pendingResumes.add(pane)
         queueAutoResume()
         await shellReady(pane)
-        info.resumePending = false
         pendingResumes.delete(pane)
+        // A reload in between handed the resume to the next copy (see dispose).
+        if (disposed) {
+            return
+        }
+        info.resumePending = false
         if (!pane._destroyCalled) {
             pane.sendInput(command + '\r')
             startupChecks(pane)
@@ -1490,6 +1494,7 @@ function install (injector) {
      * being selected, and the keyboard focus goes back to the tab in front.
      */
     const pendingResumes = new Set()
+    const triedResumes = new WeakSet()
     let autoResume = false
     let autoResumeRunning = false
     function queueAutoResume () {
@@ -1512,15 +1517,18 @@ function install (injector) {
         while (autoResume && !disposed) {
             const front = app.activeTab?.getAllTabs?.() ?? [app.activeTab]
             const order = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
-            const batch = [...pendingResumes].filter(p => !p._destroyCalled && !front.includes(p))
+            // One try per pane: a pane that does not start (a failed spawn, an SSH host that is down) waits for a click.
+            const batch = [...pendingResumes].filter(p => !p._destroyCalled && !front.includes(p) && !triedResumes.has(p))
                 .sort((a, b) => order.indexOf(a) - order.indexOf(b)).slice(0, 2)
             if (!batch.length) {
                 return
             }
-            // A starting terminal takes the keyboard focus: hand it straight back to the tab in front.
+            batch.forEach(p => triedResumes.add(p))
+            // A starting terminal takes the keyboard focus: hand it straight back to the tab in front, or drop it there.
             const guard = e => {
                 if (batch.some(p => p.content?.nativeElement?.contains(e.target))) {
-                    ;(app.activeTab?.getFocusedTab?.() ?? app.activeTab)?.frontend?.focus?.()
+                    const frontend = (app.activeTab?.getFocusedTab?.() ?? app.activeTab)?.frontend
+                    frontend ? frontend.focus() : e.target.blur?.()
                 }
             }
             document.addEventListener('focusin', guard, true)
@@ -1634,12 +1642,20 @@ function install (injector) {
      * from the Dock has launchd's bare PATH (no Homebrew, no npm globals).
      */
     function runShell (commandLine, { cwd, timeout }, done) {
-        const opts = { cwd: cwd || require('os').homedir(), timeout, maxBuffer: 64 << 20, windowsHide: true }
+        const opts = { cwd: cwd || require('os').homedir(), maxBuffer: 64 << 20, windowsHide: true, detached: !IS_WIN }
         const cp = require('child_process')
-        if (IS_WIN) {
-            cp.exec(`chcp 65001 >nul & ${commandLine}`, opts, done)
-        } else {
-            cp.execFile(process.env.SHELL || '/bin/zsh', ['-lc', commandLine], opts, done)
+        const child = IS_WIN
+            ? cp.exec(`chcp 65001 >nul & ${commandLine}`, opts, finish)
+            : cp.execFile(process.env.SHELL || '/bin/zsh', ['-lc', commandLine], opts, finish)
+        // A timeout ends the whole process tree; killing only the shell would leave the command running on its own.
+        const timer = setTimeout(() => {
+            try {
+                IS_WIN ? cp.execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => { }) : process.kill(-child.pid, 'SIGTERM')
+            } catch { }
+        }, timeout)
+        function finish (...result) {
+            clearTimeout(timer)
+            done(...result)
         }
     }
     function runCheck (b) {
@@ -1651,7 +1667,7 @@ function install (injector) {
             if (code !== 0 && code !== 10) {
                 console.warn('tabby-groups: button check failed', b.label, code, String(stderr || err?.message).trim())
             }
-            buttonState.set(b, code === 10 ? stdout.replace(/\r/g, '').trim() : null)
+            buttonState.set(b.label, code === 10 ? stdout.replace(/\r/g, '').trim() : null)
             renderButtons()
         })
     }
@@ -1681,18 +1697,22 @@ function install (injector) {
         }
     }
     function runInBackground (b) {
-        if (running.has(b)) {
+        if (running.has(b.label)) {
             return
         }
-        running.add(b)
+        running.add(b.label)
         hideToast()
         renderButtons()
         runShell(b.command, { cwd: b.cwd, timeout: 30 * 60e3 }, (err, stdout, stderr) => {
-            running.delete(b)
+            running.delete(b.label)
             if (disposed) {
                 return
             }
             const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
+            // Done: the update the check reported is applied; hide the button until the check runs again.
+            if (code === 0) {
+                buttonState.delete(b.label)
+            }
             const log = buttonLog(b)
             try {
                 require('fs').mkdirSync(require('path').dirname(log), { recursive: true })
@@ -1751,9 +1771,12 @@ function install (injector) {
                 failed.push(n)
             }
         }
-        if (!names.includes('tabby-groups')) {
-            reportReload({ done, failed })
+        // After its own successful reload this copy is disposed, and the new one reports.
+        if (disposed) {
+            return
         }
+        delete window.__tgAfterReload
+        reportReload({ done, failed })
     }
     function reportReload ({ done, failed }) {
         showToast(failed.length ? 'Some plugins did not reload' : 'Plugins reloaded ✓',
@@ -1816,8 +1839,8 @@ function install (injector) {
     function renderButtons () {
         const bar = [...document.querySelectorAll('.tab-bar > .btn-group.background')].pop()
         const shown = userButtons.filter(b => {
-            const out = buttonState.get(b)
-            if (!b.check || running.has(b)) {
+            const out = buttonState.get(b.label)
+            if (!b.check || running.has(b.label)) {
                 return true
             }
             let dismissed = null
@@ -1831,8 +1854,8 @@ function install (injector) {
             return
         }
         buttonsEl.replaceChildren(...shown.flatMap(b => {
-            const out = buttonState.get(b)
-            const busy = running.has(b)
+            const out = buttonState.get(b.label)
+            const busy = running.has(b.label)
             const btn = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button' + (b.check ? ' tg-update' : '') + (busy ? ' tg-running' : '') })
             btn.append(b.emoji || b.path || b.paths
                 ? drawIcon({ emoji: b.emoji, path: b.path, paths: b.paths, stroke: !!b.stroke, color: b.color ?? 'currentColor' })
@@ -2677,6 +2700,8 @@ function install (injector) {
         disposed = true
         cancelTabRename?.()
         window.__tabbyGroupsState = { groups: [...groups.values()] }
+        // A resume still waiting for its tab goes back on the pane, so the next copy's watch() picks it up.
+        pendingResumes.forEach(p => { p.__tgResume = p.__tgInfo?.resume })
         app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).forEach(unwatch)
         clearDecorations()
         draggedTab = draggedGroup = dropIntent = null

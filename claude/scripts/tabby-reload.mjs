@@ -5,7 +5,7 @@
 // reload(), or one whose reload throws, needs a Tabby restart. tabby-groups goes last, so it can report on the others.
 // Prints one line per plugin. Exit 0 when all reloaded, 3 when some need a restart, 2 when the port is closed, 1 on error.
 const args = process.argv.slice(2);
-const port = (() => { const i = args.indexOf('--port'); return i >= 0 ? args.splice(i, 2)[1] : '9222'; })();
+const port = (() => { const i = args.indexOf('--port'); return i >= 0 ? args.splice(i, 2)[1] ?? '9222' : '9222'; })();
 const names = args.filter((a) => !a.startsWith('--'));
 if (!names.length) { console.error('tabby-reload: name the plugins to reload, e.g. tabby-groups tabby-remote'); process.exit(1); }
 
@@ -29,6 +29,7 @@ const inTabby = async (names) => {
 };
 const r = await new Promise((resolve) => {
   ws.addEventListener('message', (e) => resolve(JSON.parse(e.data)), { once: true });
+  setTimeout(() => { console.error('tabby-reload: no answer in 60 s; restart Tabby if a plugin looks broken'); process.exit(1); }, 60000).unref();
   ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: `(${inTabby})(${JSON.stringify(names)})`, awaitPromise: true, returnByValue: true } }));
 });
 if (!r.result || r.result.exceptionDetails) {
