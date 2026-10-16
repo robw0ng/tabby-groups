@@ -1472,11 +1472,70 @@ function install (injector) {
         const info = pane.__tgInfo
         info.resume = command
         info.resumePending = true
+        pendingResumes.add(pane)
+        queueAutoResume()
         await shellReady(pane)
         info.resumePending = false
+        pendingResumes.delete(pane)
         if (!pane._destroyCalled) {
             pane.sendInput(command + '\r')
             startupChecks(pane)
+        }
+    }
+
+    /*
+     * "autoResume": true in tabby-groups.json resumes restored Claude tabs without a click, two at a time: each pair starts
+     * once the previous one is idle (or after 90 s), so a restart does not start every session at once. The active tab
+     * resumes by itself. Tabby starts a restored tab's terminal on its first focus event, so the pane gets one, without
+     * being selected, and the keyboard focus goes back to the tab in front.
+     */
+    const pendingResumes = new Set()
+    let autoResume = false
+    let autoResumeRunning = false
+    function queueAutoResume () {
+        if (!autoResume || autoResumeRunning || disposed) {
+            return
+        }
+        autoResumeRunning = true
+        setTimeout(() => runAutoResume().finally(() => { autoResumeRunning = false }), 3000)
+    }
+    const wait = ms => new Promise(r => setTimeout(r, ms))
+    async function untilTrue (test, ms) {
+        for (const end = Date.now() + ms; Date.now() < end && !disposed; await wait(500)) {
+            if (test()) {
+                return true
+            }
+        }
+        return false
+    }
+    async function runAutoResume () {
+        while (autoResume && !disposed) {
+            const front = app.activeTab?.getAllTabs?.() ?? [app.activeTab]
+            const order = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
+            const batch = [...pendingResumes].filter(p => !p._destroyCalled && !front.includes(p))
+                .sort((a, b) => order.indexOf(a) - order.indexOf(b)).slice(0, 2)
+            if (!batch.length) {
+                return
+            }
+            // A starting terminal takes the keyboard focus: hand it straight back to the tab in front.
+            const guard = e => {
+                if (batch.some(p => p.content?.nativeElement?.contains(e.target))) {
+                    ;(app.activeTab?.getFocusedTab?.() ?? app.activeTab)?.frontend?.focus?.()
+                }
+            }
+            document.addEventListener('focusin', guard, true)
+            try {
+                for (const pane of batch) {
+                    pane.emitFocused()
+                }
+                await untilTrue(() => batch.every(p => !pendingResumes.has(p)), 20000)
+                await wait(2000)
+            } finally {
+                document.removeEventListener('focusin', guard, true)
+            }
+            // Idle: the Claude process runs (its session file names it; a restored "✳" title does not count) and waits.
+            await untilTrue(() => batch.every(p => p._destroyCalled || (p.__tgInfo?.sessionId && p.__tgInfo.agent?.state === 'waiting')), 90000)
+            await wait(2000)
         }
     }
 
@@ -1519,10 +1578,12 @@ function install (injector) {
     function loadUserIcons () {
         let rules = []
         let buttonRules = []
+        autoResume = false
         try {
             const file = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8'))
             rules = file.icons ?? []
             buttonRules = file.buttons ?? []
+            autoResume = file.autoResume === true
         } catch (e) {
             if (e.code !== 'ENOENT') {
                 console.warn('tabby-groups: cannot read', userIconsFile, e.message)
@@ -1553,6 +1614,7 @@ function install (injector) {
         app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).filter(p => p.__tgInfo).forEach(p => queueInspect(p, 100))
         scheduleChecks()
         renderButtons()
+        queueAutoResume()
     }
     /*
      * The user's toolbar buttons: tabby-groups.json "buttons": [{ "label", "command", "cwd"?, "check"?, "checkEveryMinutes"?,
