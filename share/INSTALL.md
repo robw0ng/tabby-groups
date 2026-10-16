@@ -3,7 +3,7 @@
 For an agent. Every step is safe to run again.
 
 Rules:
-- No admin rights. Change nothing outside Tabby's plugins folder: no settings, no shortcuts, no start flags, no network.
+- No admin rights. Change nothing outside Tabby's plugins folder: no settings, no shortcuts, no start flags, no network (apart from installing Tabby itself in step 1, with the user's yes).
 - Never close or kill Tabby yourself: the user can lose open work. Ask the user to quit and reopen it.
 - Stop and tell the user when a step fails.
 
@@ -28,7 +28,17 @@ data="$HOME/Library/Application Support/tabby"
 plugins="$data/plugins/node_modules"
 ```
 
-If Tabby's data folder is missing, stop: ask the user to install Tabby and start it once.
+Tabby's data folder (`tabby`) is missing → Tabby is not installed, or has never been started:
+
+1. Ask the user whether to install Tabby. If they say no, stop.
+2. Install it:
+
+   | System | Command |
+   | --- | --- |
+   | Windows | `winget install --id Eugeny.Tabby -e` |
+   | macOS | `brew install --cask tabby` |
+
+3. Ask the user to open Tabby once and quit it (macOS: Cmd+Q), so its data folder exists. Then check for the folder again.
 
 ## 2. Check for an earlier install
 
