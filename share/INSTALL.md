@@ -65,7 +65,7 @@ Ask the user to quit Tabby and start it again. Tabby loads plugins only at start
 
 ## 5. Verify
 
-Check that `index.js`, `icons.js` and `package.json` are in `<plugins folder>/tabby-groups`. Then ask the user to set **Settings → Window → Tabs → Tabs location** to Left or Right, if it is not already, and to confirm that the side tab bar shows a search box at the top.
+Check that `package.json` and every file in its `"files"` list are in `<plugins folder>/tabby-groups`. Then ask the user to set **Settings → Window → Tabs → Tabs location** to Left or Right, if it is not already, and to confirm that the side tab bar shows a search box at the top.
 
 ## 6. Report
 

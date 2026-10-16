@@ -8,7 +8,13 @@ if (!root || !fs.existsSync(root)) {
   console.error('usage: node share/leak-check.mjs <folder>');
   process.exit(1);
 }
-const allowedFiles = ['INSTALL.md', 'README.md', 'tabby-groups/index.js', 'tabby-groups/icons.js', 'tabby-groups/package.json'];
+// The plugin files are the share's own package.json "files"; index.js must be among them.
+let pluginFiles = [];
+try {
+  pluginFiles = JSON.parse(fs.readFileSync(path.join(root, 'tabby-groups', 'package.json'), 'utf8')).files ?? [];
+} catch { }
+const plugin = [...new Set(['index.js', ...pluginFiles])].map(f => 'tabby-groups/' + f);
+const allowedFiles = ['INSTALL.md', 'README.md', 'tabby-groups/package.json', ...plugin];
 const rules = [
   ['Claude Code skill cog name', /claude-sessions/i],
   ['the personal workflow', /\bworkflow\b/i],

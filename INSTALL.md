@@ -8,7 +8,7 @@ The repo has two parts:
 
 | Part | Folder | Installed into |
 | --- | --- | --- |
-| Tabby plugin (the groups in the side bar) | repo root: `index.js`, `icons.js`, `package.json` | Tabby's plugin folder, as a copy |
+| Tabby plugin (the groups in the side bar) | repo root: `package.json` and the files its `"files"` list names | Tabby's plugin folder, as a copy |
 | Claude Code plugin (the `tabby` skill and `scripts/tabby.mjs`) | `claude/` | Claude Code, from this repo as a local marketplace |
 
 ## Needs
@@ -54,16 +54,17 @@ Tabby loads plugins from `<its user data folder>/plugins/node_modules`:
 # Windows
 $dst = "$env:APPDATA\tabby\plugins\node_modules\tabby-groups"
 New-Item -ItemType Directory -Force $dst | Out-Null
-Copy-Item "$repo\index.js", "$repo\icons.js", "$repo\package.json" $dst -Force
+$files = @((Get-Content -Raw "$repo\package.json" | ConvertFrom-Json).files) + 'package.json'
+Copy-Item ($files | ForEach-Object { Join-Path $repo $_ }) $dst -Force
 ```
 
 ```sh
 # macOS
 dst="$HOME/Library/Application Support/tabby/plugins/node_modules/tabby-groups"
-mkdir -p "$dst" && cp "$repo/index.js" "$repo/icons.js" "$repo/package.json" "$dst/"
+mkdir -p "$dst" && for f in $(node -p "require('$repo/package.json').files.join(' ')") package.json; do cp "$repo/$f" "$dst/"; done
 ```
 
-Copy only these three files. A link instead of a copy makes Tabby run the repo's working copy.
+Copy only `package.json` and the files in its `"files"` list. A link instead of a copy makes Tabby run the repo's working copy.
 
 ## 4. Open Tabby's DevTools port
 

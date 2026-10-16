@@ -11,9 +11,10 @@ if (!out) {
 const repo = path.join(import.meta.dirname, '..');
 const plugin = path.join(out, 'tabby-groups');
 fs.mkdirSync(plugin, { recursive: true });
-for (const f of ['index.js', 'icons.js']) fs.copyFileSync(path.join(repo, f), path.join(plugin, f));
 const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
-const keep = ['name', 'version', 'description', 'keywords', 'author', 'license', 'main'];
+// The plugin's runtime files are exactly package.json's "files".
+for (const f of pkg.files) fs.copyFileSync(path.join(repo, f), path.join(plugin, f));
+const keep = ['name', 'version', 'description', 'keywords', 'author', 'license', 'main', 'files'];
 fs.writeFileSync(path.join(plugin, 'package.json'), JSON.stringify(Object.fromEntries(keep.filter(k => k in pkg).map(k => [k, pkg[k]])), null, 2) + '\n');
 for (const f of ['INSTALL.md', 'README.md']) fs.copyFileSync(path.join(repo, 'share', f), path.join(out, f));
 console.log(pkg.version);
