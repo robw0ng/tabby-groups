@@ -63,6 +63,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
 | `list()` | All groups, with their tabs and Claude Code counts |
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
+| `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the tab titled `name` (else the first title that contains it), as plain text. Read-only. Null when no tab matches, or for a restored tab that was not opened yet. |
 
 ## Test
 
