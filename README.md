@@ -64,6 +64,15 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `list()` | All groups, with their tabs and Claude Code counts |
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
 | `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the tab titled `name` (else the first title that contains it), as plain text. Read-only. Null when no tab matches, or for a restored tab that was not opened yet. |
+| `say(name, text, { caller })` | Types `text` into the one tab titled `name` (else the one whose title contains it) and presses Enter, without focusing it. Refuses no match, more than one match, a tab not opened yet, and the tab with the `caller` pid under its shell. Returns `{ ok, why }`. |
+
+### Wake another session: tab-say
+
+`node claude/scripts/tab-say.mjs <tab title> <message> [--port 9222]` types a message into another tab, so a Claude Code or Codex session there reads a file another session wrote. Exit 0 typed, 1 refused (the reason on stderr), 2 port closed. A busy Claude Code queues the message and runs it after its turn. Newlines in the message become spaces. To let Codex wake a Claude tab, add this line to its instructions (AGENTS.md), with the real path:
+
+```
+After you write a file for another session, wake it: node <tabby-groups>/claude/scripts/tab-say.mjs "<its tab title>" "read <file>"
+```
 
 ## Test
 

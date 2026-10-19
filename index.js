@@ -1911,7 +1911,40 @@ function install (injector) {
         }
         return out.join('\n')
     }
-    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText,
+    /**
+     * Types `text` into the one pane whose title is `name` (else the one that contains it) and presses Enter, without
+     * focusing it. `caller` is the pid of the asking process: a pane with that pid under its shell is refused.
+     * Returns { ok: true } or { ok: false, why }.
+     */
+    async function say (name, text, { caller } = {}) {
+        const clean = s => String(s ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim().toLowerCase()
+        const want = clean(name)
+        const panes = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
+        const exact = panes.filter(p => clean(titleOf(p)) === want)
+        const found = exact.length ? exact : want ? panes.filter(p => clean(titleOf(p)).includes(want)) : []
+        if (found.length !== 1) {
+            return { ok: false, why: found.length ? `${found.length} tabs match "${name}": ${found.map(titleOf).join(', ')}` : `no tab matches "${name}"` }
+        }
+        const [pane] = found
+        if (!pane.session) {
+            return { ok: false, why: `"${titleOf(pane)}" was not opened since Tabby started; open it first` }
+        }
+        if (caller) {
+            const procs = await processList(await pane.session.pty?.getPID())
+            if (!procs.length) {
+                return { ok: false, why: `cannot read the processes of "${titleOf(pane)}", so cannot rule out the caller's own tab` }
+            }
+            if (procs.some(p => p.pid === caller)) {
+                return { ok: false, why: `"${titleOf(pane)}" is the caller's own tab` }
+            }
+        }
+        // Text and Enter in one write reads as a paste to Claude Code, which then takes the Enter as a new line.
+        pane.sendInput(String(text).replace(/\r?\n/g, ' '))
+        await new Promise(r => setTimeout(r, 150))
+        pane.sendInput('\r')
+        return { ok: true, tab: titleOf(pane) }
+    }
+    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
         renderSettings: host => userIconsFile && renderSettings(host, userIconsFile) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
     if (window.__tgAfterReload) {

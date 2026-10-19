@@ -1,6 +1,6 @@
 ---
 name: tabby
-description: Open, list and move Tabby terminal tabs in tab groups (the tabby-groups Tabby plugin). Use when the user asks to open a Claude Code or shell session in a Tabby tab or group, to see which tabs and groups are open, or to put tabs in a group or take them out ("put these tabs in a group", "open a Claude in group X", "what's open in Tabby").
+description: Open, list and move Tabby terminal tabs in tab groups (the tabby-groups Tabby plugin). Use when the user asks to open a Claude Code or shell session in a Tabby tab or group, to see which tabs and groups are open, or to put tabs in a group or take them out, or to wake a session in another tab after writing it a file ("put these tabs in a group", "open a Claude in group X", "what's open in Tabby").
 ---
 
 # Tabby tab groups
@@ -70,9 +70,19 @@ return app.tabs.map((t, i) => ({ n: i + 1, title: t.customTitle || t.title, grou
 
 The exit codes are the same as `tabby.mjs`. The file is JavaScript, so write a backslash as `\\`.
 
+## Wake another session
+
+After you write a file for a session in another tab (Claude Code, Codex, any CLI), wake it:
+
+```sh
+node <plugin>/scripts/tab-say.mjs "<its tab title>" "read <file>"
+```
+
+It types the message into that tab and presses Enter, without focusing it. A busy Claude Code queues it. Exit 1 means refused (no match, more than one match, a tab not opened yet, or your own tab): report the reason on stderr and do not retry with a looser title. Only wake a tab the user or the coordinating session named.
+
 ## Rules
 
-- Port 9222 is the user's own Tabby. Only read from it unless the user asks for a change. Test changes in a separate Tabby started with its own `--user-data-dir` and another port, and start that Tabby from a clean shell: a shell that inherited this Claude session's environment starts Claude sessions that write no session record.
+- Port 9222 is the user's own Tabby. Only read from it unless the user asks for a change; `tab-say` into a tab the user or the coordinating session named is allowed. Test changes in a separate Tabby started with its own `--user-data-dir` and another port, and start that Tabby from a clean shell: a shell that inherited this Claude session's environment starts Claude sessions that write no session record.
 - Do not close, restart or type into tabs the user did not ask about. A tab can hold another Claude session at work.
 - Groups, colours, collapse and pins persist through Tabby restarts. Renames, colours and collapse are in the group's right-click menu; tell the user that instead of guessing.
 - When `list` returns a plain list without `plugin: true`, the tabby-groups Tabby plugin is not installed: only `list` and `open --file` with a `.ps1` script work.
