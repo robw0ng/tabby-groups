@@ -75,7 +75,7 @@ const CSS = `
     position: absolute; z-index: 5; height: 23px; padding: 0 4px; border-radius: 4px; outline: none;
     border: 1px solid rgba(255,255,255,.25); background: color-mix(in srgb, #000 45%, var(--tg-bg, #0d0d0d)); color: inherit; font: inherit;
 }
-.tg-count { font-size: 11px; color: #d8d8d8; white-space: nowrap; }
+.tg-count { font-size: 11px; color: #d8d8d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tg-sub .tg-text { flex-direction: row; align-items: baseline; gap: 6px; }
 .tg-sub .tg-name { font-weight: 500; }
 .tg-inner {
@@ -301,6 +301,31 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 .tg-item:hover { background: #2e2e2e; }
 .tg-item.tg-on::after { content: ' ✓'; opacity: .7; }
 .tg-label { padding: 4px 10px; font-size: 11px; opacity: .6; }
+
+/*
+ * A narrow side bar (under 130px) keeps only the icons, their badges, the panel colours and, while they fit, the numbers.
+ * Tabby's own tooltip still shows a tab's full title, and a group header's data-tg-tip its name.
+ */
+.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar { container: tg-side / inline-size; }
+@container tg-side (max-width: 129px) {
+    .tabs { --tg-gap: 3px !important; }
+    .tg-toolbar, .tg-search, .tg-presence, .tabs > tab-header > .buttons, .tg-tab-pin, .tabs > tab-header > .pin-indicator,
+    .tg-header .tg-text, .tg-header .tg-add, .tg-header .tg-pin { display: none !important; }
+    .tab-bar > .tabs + .btn-group { grid-column: 1 / -1 !important; flex-wrap: wrap; justify-content: center; }
+    .tab-bar > .btn-group { flex-wrap: wrap; justify-content: center; min-width: 0; }
+    .tabs > tab-header { justify-content: center; padding-left: 0 !important; padding-right: 0 !important; min-width: 0 !important; }
+    /* The name stays as an invisible layer over the row, so the row still drags. */
+    .tabs > tab-header > .name { position: absolute !important; inset: 0; margin: 0 !important; padding: 0 !important; font-size: 0 !important; }
+    .tg-cwd { display: none; }
+    .tabs > tab-header > .index { flex: none; width: auto !important; min-width: 0 !important; margin: 0 2px 0 0 !important; }
+    .tg-icon { margin: 0 4px; }
+    .tabs-on-left .tabs > tab-header.tg-two-line, .tabs-on-right .tabs > tab-header.tg-two-line { flex-basis: var(--tabs-height) !important; }
+    .tabs-on-left .tabs > tab-header.tg-member.tg-last.tg-two-line, .tabs-on-right .tabs > tab-header.tg-member.tg-last.tg-two-line { flex-basis: calc(var(--tabs-height) + var(--tg-gap)) !important; }
+    .tg-header, .tg-inner { justify-content: center; padding-left: 0 !important; padding-right: 0 !important; }
+}
+@container tg-side (max-width: 71px) {
+    .tabs > tab-header > .index { display: none !important; }
+}
 `
 
 module.exports = { COLORS, NO_COLOR, tintPct, shaded, ACTIVE_TINT_ADD, CSS }

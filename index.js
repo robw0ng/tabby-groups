@@ -507,7 +507,7 @@ function install (injector) {
         const onRight = !!document.querySelector('.tabs-on-right')
         let width = bar.width
         const move = e => {
-            width = Math.round(Math.max(140, Math.min(600, onRight ? bar.right - e.clientX : e.clientX - bar.left)))
+            width = Math.round(Math.max(44, Math.min(600, onRight ? bar.right - e.clientX : e.clientX - bar.left)))
             setWidth(width)
             placeHandle()
         }
