@@ -36,6 +36,8 @@ node <plugin>/scripts/tabby.mjs open --group "<group>" --name "<tab title>" --di
 
 The group is created when it does not exist. The shell is the user's Tabby default profile.
 
+With several Tabby windows, every script acts on the window whose tab runs you (else the focused window). `open` and `list` report it as `window: { index, count, by }`; `by` is `only`, `caller`, `focused` or `first`. Tell the user which window when `by` is not `only` or `caller`.
+
 ## Move a tab
 
 ```sh

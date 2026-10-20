@@ -11,6 +11,9 @@
 // --app claude|codex: the app names its own tab (Claude Code shows "✳ <session name>"), so no fixed title is kept;
 // --app shell keeps the short title. This never splits panes.
 // It drives Tabby's own Angular services (AppService, ProfilesService), an internal API: re-test after a Tabby update.
+// With several Tabby windows, it acts on the window whose tab runs the caller (--caller-pid <pid>, default this process),
+// else the focused one; the JSON's "window" is { index, count, by: only|caller|focused|first }.
+import { callerPage } from './tabby-window.mjs';
 const args = process.argv.slice(2);
 const cmd = args[0];
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i > 0 ? args[i + 1] : d; };
@@ -25,10 +28,7 @@ const closed = () => {
   console.error(`tabby: no DevTools port ${port} — start Tabby with --remote-debugging-port=${port}`);
   process.exit(2);
 };
-let page;
-try {
-  page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === 'page');
-} catch { }
+const { page, window: win, note: winNote } = await callerPage(port, opt('caller-pid', process.pid));
 if (!page) closed();
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', closed, { once: true }); });
@@ -64,7 +64,9 @@ const open = async (app, profiles, groupOf, o) => {
   // --parent places a new group only: a launch never moves a group that exists (it could even ask for a loop).
   const existing = tg?.version >= 1 ? tg.list().find((g) => g.name === o.group) : null;
   const parent = o.parent && !existing ? { parent: o.parent } : {};
-  const note = o.parent && existing && existing.parent !== o.parent ? { warning: `group "${o.group}" exists (parent: ${existing.parent ?? 'none'}), so --parent ${o.parent} was ignored` } : {};
+  const note = o.parent && existing && existing.parent !== o.parent ? { warning: `group "${o.group}" exists (parent: ${existing.parent ?? 'none'}), so --parent ${o.parent} was ignored` }
+    : o.parent && !existing && tg?.version >= 1 && !tg.list().some((g) => g.name === o.parent) ? { warning: `parent group "${o.parent}" did not exist in this window, so it was created` }
+    : {};
   // The plugin's open fails before it types the command: close the bare shell it left, so a fallback gives one session.
   const tgOpen = async (opts) => {
     const before = new Set(app.tabs);
@@ -80,7 +82,7 @@ const open = async (app, profiles, groupOf, o) => {
     // The plugin's open uses Tabby's default profile and types --run once the shell is ready.
     const n = await tgOpen({ title: o.name, cwd: o.dir, run: o.run, group: o.group, ...parent });
     const g = tg.list().find((x) => x.name === o.group);
-    return { tab: o.name, group: o.group, color: g?.color, index: n - 1, groupSize: g?.tabs.length, plugin: true, ...note };
+    return { tab: o.name, group: o.group, parent: g?.parent ?? null, color: g?.color, index: n - 1, groupSize: g?.tabs.length, plugin: true, ...note };
   }
   const palette = ['#f2756a', '#8ef58a', '#fdffad', '#86b7f7', '#f48cf6', '#d7cff9']; // the tabby-groups plugin's palette
   let h = 0; for (const c of o.group) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -107,7 +109,7 @@ const open = async (app, profiles, groupOf, o) => {
     const tab = app.tabs[n - 1];
     if (ownTitle) tab.setCustomTitle(''); // hand the title back to the app
     const g = tg.list().find((x) => x.name === o.group);
-    return { tab: o.name, group: o.group, color: g.color, index: app.tabs.indexOf(tab), groupSize: g.tabs.length, plugin: true, ...note };
+    return { tab: o.name, group: o.group, parent: g.parent ?? null, color: g.color, index: app.tabs.indexOf(tab), groupSize: g.tabs.length, plugin: true, ...note };
   }
   if (!ps1) throw new Error('a launch script other than .ps1 needs the tabby-groups Tabby plugin');
   const profile = { type: 'local', name: o.name, options: { command: pwsh, args: ['-NoLogo', '-NoExit', '-File', o.file], cwd: o.dir, env: {} } };
@@ -157,5 +159,7 @@ if (r.result.exceptionDetails) {
 }
 const value = r.result.result.value;
 if (value?.warning) console.error('tabby: warning: ' + value.warning);
+if (winNote) console.error('tabby: ' + winNote);
+if (value && typeof value === 'object' && !Array.isArray(value)) value.window = win;
 console.log(JSON.stringify(value));
 process.exit(0);

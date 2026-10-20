@@ -4,8 +4,10 @@
 //   app: Tabby's AppService (app.tabs, app.activeTab, …)   injector: Angular's injector (injector.get(core.ConfigService))
 //   core: require('tabby-core')                             tg: window.__tabbyGroups (undefined without the Tabby plugin)
 // The code travels as a file and as JSON, never through a shell, so backslashes and quotes arrive as written.
+// With several Tabby windows it runs in the one whose tab runs this process, else the focused one.
 // Exit 0 with the JSON result, 2 when the port is closed, 1 when the code throws (message on stderr).
 import fs from 'node:fs';
+import { callerPage } from './tabby-window.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };
@@ -18,13 +20,12 @@ const body = file === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(file, '
 const input = opt('args') ? JSON.parse(fs.readFileSync(opt('args'), 'utf8')) : null;
 const port = opt('port') ?? '9222';
 
-let page;
-try {
-  page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === 'page');
-} catch {
+const { page, note } = await callerPage(port);
+if (!page) {
   console.error(`tabby-eval: no DevTools port ${port} — start Tabby with --remote-debugging-port=${port}`);
   process.exit(2);
 }
+if (note) console.error('tabby-eval: ' + note);
 const expression = `(async () => {
   const { ɵgetLContext } = require('@angular/core');
   const lv = ɵgetLContext(document.querySelector('app-root')).lView;

@@ -3,19 +3,18 @@
 // The contract (shared by tabby-groups and tabby-remote): plugin "tabby-x" exposes window.__tabbyX.reload(), which drops
 // its own require cache and installs the files on disk again; install() disposes the old copy first. A plugin without
 // reload(), or one whose reload throws, needs a Tabby restart. tabby-groups goes last, so it can report on the others.
-// Prints one line per plugin. Exit 0 when all reloaded, 3 when some need a restart, 2 when the port is closed, 1 on error.
+// Each Tabby window runs its own copy of every plugin, so it reloads in every window.
+// Prints one line per plugin (per window when there are several). Exit 0 when all reloaded, 3 when some need a restart,
+// 2 when the port is closed, 1 on error.
+import { tabbyPages, evaluateIn } from './tabby-window.mjs';
+
 const args = process.argv.slice(2);
 const port = (() => { const i = args.indexOf('--port'); return i >= 0 ? args.splice(i, 2)[1] ?? '9222' : '9222'; })();
 const names = args.filter((a) => !a.startsWith('--'));
 if (!names.length) { console.error('tabby-reload: name the plugins to reload, e.g. tabby-groups tabby-remote'); process.exit(1); }
 
-let page;
-try {
-  page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === 'page');
-} catch { }
-if (!page) { console.error(`tabby-reload: no DevTools port ${port}; restart Tabby to load ${names.join(', ')}`); process.exit(2); }
-const ws = new WebSocket(page.webSocketDebuggerUrl);
-await new Promise((r) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', () => { console.error('tabby-reload: cannot connect'); process.exit(2); }, { once: true }); });
+const pages = await tabbyPages(port);
+if (!pages?.length) { console.error(`tabby-reload: no DevTools port ${port}; restart Tabby to load ${names.join(', ')}`); process.exit(2); }
 
 const inTabby = async (names) => {
   const global = (n) => '__' + n.replace(/-(\w)/g, (m, c) => c.toUpperCase());
@@ -27,15 +26,12 @@ const inTabby = async (names) => {
   }
   return out;
 };
-const r = await new Promise((resolve) => {
-  ws.addEventListener('message', (e) => resolve(JSON.parse(e.data)), { once: true });
-  setTimeout(() => { console.error('tabby-reload: no answer in 60 s; restart Tabby if a plugin looks broken'); process.exit(1); }, 60000).unref();
-  ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: `(${inTabby})(${JSON.stringify(names)})`, awaitPromise: true, returnByValue: true } }));
-});
-if (!r.result || r.result.exceptionDetails) {
-  console.error('tabby-reload: ' + (r.result?.exceptionDetails?.exception?.description ?? r.error?.message ?? 'no answer').split('\n')[0]);
-  process.exit(1);
+setTimeout(() => { console.error('tabby-reload: no answer in 60 s; restart Tabby if a plugin looks broken'); process.exit(1); }, 60000).unref();
+const rows = [];
+for (const [i, page] of pages.entries()) {
+  const value = await evaluateIn(page, `(${inTabby})(${JSON.stringify(names)})`);
+  if (!Array.isArray(value)) { console.error(`tabby-reload: no answer from window ${i + 1}`); process.exit(1); }
+  for (const [n, state] of value) rows.push([pages.length > 1 ? `${n} (window ${i + 1})` : n, state]);
 }
-const rows = r.result.result.value;
 rows.forEach(([n, state]) => console.log(`${n}: ${state}`));
 process.exit(rows.every(([, s]) => s === 'reloaded') ? 0 : 3);
