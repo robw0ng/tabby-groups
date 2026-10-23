@@ -43,9 +43,12 @@ With several Tabby windows, every script acts on the window whose tab runs you (
 ```sh
 node <plugin>/scripts/tabby.mjs move --tab <number|title> --group "<group>"
 node <plugin>/scripts/tabby.mjs move --tab <number|title> --none
+node <plugin>/scripts/tabby.mjs move --tab <number|title> --window <n|new>
 ```
 
 `--tab` is the number the side bar shows, or a title. A title matches exactly first, then as one unique case-insensitive part. `--none` takes the tab out of its group. To group several tabs, move each one into the same group.
+
+`--window` moves the tab to Tabby window `n` (oldest window first) or to a new window, with its shell and any Claude still running, and with its group. A title is found in any window. JSON `movedTo` is the window number.
 
 ## Run code inside Tabby
 

@@ -50,20 +50,37 @@ function ancestors (start) {
 const SHELL_PIDS = `(async () => {
   const app = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[8].app;
   const panes = app.tabs.flatMap((t) => t.getAllTabs?.() ?? [t]);
-  return { focused: document.hasFocus(), pids: (await Promise.all(panes.map((p) => p.session?.pty?.getPID?.()))).filter(Boolean) };
+  return { born: performance.timeOrigin, focused: document.hasFocus(), pids: (await Promise.all(panes.map((p) => p.session?.pty?.getPID?.()))).filter(Boolean) };
 })()`;
 
+/** The window with a tab or pane titled `title` (exact in any window first, else containing it; any case), as callerPage returns one; else null. */
+export async function pageWithTab (port, title) {
+  const pages = await tabbyPages(port);
+  const has = `(() => {
+    const app = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[8].app;
+    const titles = app.tabs.flatMap((t) => [t, ...(t.getAllTabs?.() ?? [])]).map((t) => (t.customTitle || t.title || '').toLowerCase());
+    const want = ${JSON.stringify(String(title).toLowerCase())};
+    return { born: performance.timeOrigin, exact: titles.includes(want), part: titles.some((t) => t.includes(want)) };
+  })()`;
+  const all = (await Promise.all((pages ?? []).map(async (page) => ({ page, w: await evaluateIn(page, has) })))).sort((a, b) => (a.w?.born ?? Infinity) - (b.w?.born ?? Infinity));
+  const exact = all.findIndex((x) => x.w?.exact);
+  const i = exact >= 0 ? exact : all.findIndex((x) => x.w?.part);
+  return i < 0 ? null : { page: all[i].page, window: { index: i + 1, count: all.length, by: 'tab' } };
+}
+
 /**
- * `window` is { index (1-based, in /json/list order), count, by: "only" | "caller" | "focused" | "first" }.
+ * `window` is { index (1-based, oldest window first, as the plugin's "Move to window" numbers them), count, by: "only" | "caller" | "focused" | "first" }.
  * `callerPid` (default this process) is where the ancestor walk starts.
  */
 export async function callerPage (port, callerPid = process.pid) {
-  const pages = await tabbyPages(port);
-  if (!pages?.length) return { page: null };
-  const count = pages.length;
-  if (count === 1) return { page: pages[0], window: { index: 1, count, by: 'only' } };
+  const found = await tabbyPages(port);
+  if (!found?.length) return { page: null };
+  const count = found.length;
+  if (count === 1) return { page: found[0], window: { index: 1, count, by: 'only' } };
   const mine = ancestors(Number(callerPid));
-  const windows = await Promise.all(pages.map((p) => evaluateIn(p, SHELL_PIDS)));
+  const all = await Promise.all(found.map(async (page) => ({ page, w: await evaluateIn(page, SHELL_PIDS) })));
+  all.sort((a, b) => (a.w?.born ?? Infinity) - (b.w?.born ?? Infinity));
+  const pages = all.map((x) => x.page), windows = all.map((x) => x.w);
   const own = windows.findIndex((w) => w?.pids.some((pid) => mine.has(pid)));
   if (own >= 0) return { page: pages[own], window: { index: own + 1, count, by: 'caller' } };
   const focused = windows.findIndex((w) => w?.focused);

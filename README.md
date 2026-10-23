@@ -44,6 +44,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup |
 | Collapse or expand | Click the group header |
 | Leave a group | Right-click the tab > Remove from group |
+| Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along. If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. |
 | Cancel a drag | Press Escape |
 
 ## Works with tabby-remote
@@ -65,6 +66,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
 | `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the tab titled `name` (else the first title that contains it), as plain text. Read-only. Null when no tab matches, or for a restored tab that was not opened yet. |
 | `say(name, text, { caller })` | Types `text` into the one tab titled `name` (else the one whose title contains it) and presses Enter, without focusing it. Refuses no match, more than one match, a tab not opened yet, and the tab with the `caller` pid under its shell. Returns `{ ok, why }`. |
+| `move(name, window)` / `windows()` | Moves the tab titled `name` (else the one whose title contains it), or a tab object, to window `window` (a number from `windows()`, oldest first) or `'new'`. Returns `{ ok, window }` or `{ ok: false, why }`; on a failure the tab stays. `windows()` lists `{ n, me }`. |
 
 ### Wake another session: tab-say
 

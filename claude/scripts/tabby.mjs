@@ -3,6 +3,8 @@
 //   node tabby.mjs open --group <g> --name <n> --dir <folder> [--run "<command>"] [--parent <p>] [--port 9222]
 //   node tabby.mjs list [--port 9222]
 //   node tabby.mjs move --tab <number|title> (--group <g> [--parent <p>] | --none) [--port 9222]
+//   node tabby.mjs move --tab <number|title> --window <n|new> [--port 9222]   (the running tab, with its group, to window n,
+//   oldest first; a title is found in any window)
 // Prints one JSON line. Exit 2 when the port is closed (a launcher can fall back; nothing was opened), 1 on any other error
 // before a tab exists, and 3 when Tabby got the request but gave no answer (a tab may exist: do not open a second one).
 // An error after the new tab exists still exits 0, with a "warning" in the JSON and on stderr.
@@ -13,7 +15,7 @@
 // It drives Tabby's own Angular services (AppService, ProfilesService), an internal API: re-test after a Tabby update.
 // With several Tabby windows, it acts on the window whose tab runs the caller (--caller-pid <pid>, default this process),
 // else the focused one; the JSON's "window" is { index, count, by: only|caller|focused|first }.
-import { callerPage } from './tabby-window.mjs';
+import { callerPage, pageWithTab } from './tabby-window.mjs';
 const args = process.argv.slice(2);
 const cmd = args[0];
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i > 0 ? args[i + 1] : d; };
@@ -28,7 +30,9 @@ const closed = () => {
   console.error(`tabby: no DevTools port ${port} — start Tabby with --remote-debugging-port=${port}`);
   process.exit(2);
 };
-const { page, window: win, note: winNote } = await callerPage(port, opt('caller-pid', process.pid));
+// move --window takes the tab from whichever window has it (by title; a number is the caller's window's tab).
+const byTab = cmd === 'move' && opt('window') && !/^\d+$/.test(opt('tab') ?? '1') ? await pageWithTab(port, opt('tab')) : null;
+const { page, window: win, note: winNote } = byTab ?? await callerPage(port, opt('caller-pid', process.pid));
 if (!page) closed();
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', closed, { once: true }); });
@@ -136,6 +140,15 @@ const move = async (app, profiles, groupOf, o) => {
   const tg = window.__tabbyGroups;
   if (!(tg?.version >= 1)) throw new Error('move needs the tabby-groups Tabby plugin');
   const title = (t) => t.customTitle || t.title || '';
+  // A title goes to the plugin as it is: it also matches the panes of a split tab.
+  if (o.window) {
+    if (!tg.move) throw new Error('move --window needs tabby-groups 0.1.4 or later in Tabby');
+    const tab = /^\d+$/.test(o.tab) ? app.tabs[+o.tab - 1] : o.tab;
+    if (!tab) throw new Error(`no tab ${o.tab}`);
+    const r = await tg.move(tab, o.window === 'new' ? 'new' : +o.window);
+    if (!r.ok) throw new Error(r.why);
+    return { tab: typeof tab === 'string' ? tab : title(tab), movedTo: r.window };
+  }
   let tab = /^\d+$/.test(o.tab) ? app.tabs[+o.tab - 1] : app.tabs.find((t) => title(t) === o.tab);
   if (!tab && !/^\d+$/.test(o.tab)) {
     const hits = app.tabs.filter((t) => title(t).toLowerCase().includes(o.tab.toLowerCase()));
@@ -148,9 +161,9 @@ const move = async (app, profiles, groupOf, o) => {
   return { tab: title(tab), group: tab.__tg ?? null, index: app.tabs.indexOf(tab) };
 };
 
-const input = { group: opt('group'), name: opt('name'), dir: opt('dir'), file: opt('file'), app: opt('app', 'shell'), run: opt('run'), parent: opt('parent'), tab: opt('tab'), none: flag('none') };
+const input = { group: opt('group'), name: opt('name'), dir: opt('dir'), file: opt('file'), app: opt('app', 'shell'), run: opt('run'), parent: opt('parent'), tab: opt('tab'), none: flag('none'), window: opt('window') };
 if (cmd === 'open' && (!input.group || !input.name)) { console.error('tabby: open needs --group and --name'); process.exit(1); }
-if (cmd === 'move' && (!input.tab || (!input.group && !input.none))) { console.error('tabby: move needs --tab and --group or --none'); process.exit(1); }
+if (cmd === 'move' && (!input.tab || (!input.group && !input.none && !input.window))) { console.error('tabby: move needs --tab and --group, --none or --window'); process.exit(1); }
 const r = await evaluate(inTabby({ open, list, move }[cmd], input));
 if (!r.result) unknown('DevTools error: ' + (r.error?.message ?? JSON.stringify(r)));
 if (r.result.exceptionDetails) {

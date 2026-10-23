@@ -9,6 +9,7 @@ const { createButtons } = require('./buttons')
 const { createAgent } = require('./agent')
 const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
+const { createWindows } = require('./windows')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -452,6 +453,20 @@ function install (injector) {
                     { label: 'Remove from group', click: () => removeTab(tab) },
                 )
             }
+            const moveTo = async to => {
+                const r = await windowsApi.move(tab, to)
+                if (!r.ok) {
+                    injector.get(core.NotificationsService).error(`Could not move the tab: ${r.why}`)
+                }
+            }
+            items.push({
+                label: 'Move to window',
+                submenu: [
+                    ...windowsApi.windows().map(w => ({ label: `Window ${w.n}${w.me ? ' (this one)' : ''}`, enabled: !w.me, click: () => moveTo(w.n) })),
+                    { type: 'separator' },
+                    { label: 'New window', click: () => moveTo('new') },
+                ],
+            })
             return items
         },
     }
@@ -1047,6 +1062,11 @@ function install (injector) {
                     options.args = shell.args
                 }
             }
+            // A tab that moves to another window takes its pane state along (see windows.js).
+            if (tab.__tgMoving) {
+                const { resumePending, ...state } = info
+                token.tabbyInfo = state
+            }
         }
         return token
     }
@@ -1061,8 +1081,12 @@ function install (injector) {
         if (params && typeof token.tabbyResume === 'string') {
             params.inputs.__tgResume = token.tabbyResume
         }
+        if (params && token.tabbyInfo) {
+            params.inputs.__tgInfo = token.tabbyInfo
+        }
         return params
     }
+    const windowsApi = createWindows({ app, injector, core, recovery, top, opened: tab => watch(tab), isDisposed: () => disposed })
 
     // Types the resume command once the restored pane's shell is ready (whenever its tab is first shown). Until then the
     // command stays the pane's resume, so a restart before the tab was opened still brings the session back later.
@@ -1833,6 +1857,7 @@ function install (injector) {
         agentState.dispose()
         userIconsWatch?.close()
         buttonBar.dispose()
+        windowsApi.dispose()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)
         if (i >= 0) {
@@ -1937,15 +1962,10 @@ function install (injector) {
      * Returns { ok: true } or { ok: false, why }.
      */
     async function say (name, text, { caller } = {}) {
-        const clean = s => String(s ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim().toLowerCase()
-        const want = clean(name)
-        const panes = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
-        const exact = panes.filter(p => clean(titleOf(p)) === want)
-        const found = exact.length ? exact : want ? panes.filter(p => clean(titleOf(p)).includes(want)) : []
-        if (found.length !== 1) {
-            return { ok: false, why: found.length ? `${found.length} tabs match "${name}": ${found.map(titleOf).join(', ')}` : `no tab matches "${name}"` }
+        const { pane, why } = onePane(name)
+        if (!pane) {
+            return { ok: false, why }
         }
-        const [pane] = found
         if (!pane.session) {
             return { ok: false, why: `"${titleOf(pane)}" was not opened since Tabby started; open it first` }
         }
@@ -1964,7 +1984,33 @@ function install (injector) {
         pane.sendInput('\r')
         return { ok: true, tab: titleOf(pane) }
     }
+    /** The one pane whose title is `name` (else the one that contains it), or { why }. `whole`: the one tab, with its panes as one. */
+    function onePane (name, { whole } = {}) {
+        const clean = s => String(s ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim().toLowerCase()
+        const want = clean(name)
+        const panes = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
+        // A split tab's own title can differ from every pane's (a custom title, or an app's title in the pane).
+        if (whole) {
+            panes.push(...app.tabs.filter(t => !panes.includes(t)))
+        }
+        const exact = panes.filter(p => clean(titleOf(p)) === want)
+        let found = exact.length ? exact : want ? panes.filter(p => clean(titleOf(p)).includes(want)) : []
+        if (whole) {
+            found = [...new Set(found.map(top))]
+        }
+        return found.length === 1 ? { pane: found[0] }
+            : { why: found.length ? `${found.length} tabs match "${name}": ${found.map(titleOf).join(', ')}` : `no tab matches "${name}"` }
+    }
+    /**
+     * Moves the tab `name` (a tab object, or a title as in say) to window `to`: its number in windows(), or 'new'. A split
+     * tab moves whole. Returns { ok, window } or { ok: false, why }.
+     */
+    function move (name, to) {
+        const { pane, why } = typeof name === 'string' ? onePane(name, { whole: true }) : { pane: name }
+        return pane ? windowsApi.move(pane, to) : { ok: false, why }
+    }
     window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
+        move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
         renderSettings: host => userIconsFile && renderSettings(host, userIconsFile) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
     if (window.__tgAfterReload) {
