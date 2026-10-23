@@ -1,7 +1,7 @@
 const IS_WIN = process.platform === 'win32'
 
 /** The user's toolbar buttons, their background runs, the result card, and reloads started from it. */
-function createButtons ({ open, drawIcon, hideTip, isDisposed }) {
+function createButtons ({ open, drawIcon, hideTip, isDisposed, autoReload }) {
     let userButtons = []
 
     /*
@@ -112,6 +112,10 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed }) {
                 showToast(`${b.label} failed (exit ${code})`, [...problems, ...notes], [['Open log', () => openLog(log)]])
             } else if (problems.length) {
                 showToast(`${b.label}: ${problems.length} problem${problems.length === 1 ? '' : 's'}`, [...problems, ...notes], [['Open log', () => openLog(log)]])
+            } else if (reload.length && autoReload() && reload.some(canReload)) {
+                // Synced code does nothing until the running copy reloads: reload in place, here and in every other window.
+                requestReload(reload)
+                reloadPlugins(reload.filter(canReload), reload.filter(n => !canReload(n)))
             } else if (reload.length) {
                 showToast(`${b.label}: updated`, [`Changed: ${reload.join(', ')}`, ...notes], reloadActions(reload, log))
             } else {
@@ -136,12 +140,35 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed }) {
             ...stuck.length < names.length ? [['Reload plugins', () => reloadPlugins(names.filter(canReload))]] : [],
             ...stuck.length ? [[`Restart Tabby to load ${stuck.join(', ')}`, null]] : []]
     }
-    /** Reloads the plugins, this one last (its reload ends this copy); the next copy shows the result. */
-    async function reloadPlugins (names) {
-        const done = [], failed = []
+    /*
+     * Each Tabby window runs its own copy of every plugin. The windows share one localStorage, and a write in one fires
+     * "storage" in all the others, so that is how the other windows hear to reload.
+     */
+    const RELOAD_KEY = 'tabby-groups:reload-request'
+    function requestReload (names) {
+        try {
+            localStorage.setItem(RELOAD_KEY, JSON.stringify({ names, at: Date.now() }))
+        } catch { }
+    }
+    function onStorage (e) {
+        if (e.key !== RELOAD_KEY || !e.newValue || !autoReload() || isDisposed()) {
+            return
+        }
+        let names = []
+        try {
+            names = JSON.parse(e.newValue).names.map(String)
+        } catch { }
+        if (names.some(canReload)) {
+            reloadPlugins(names.filter(canReload), names.filter(n => !canReload(n)))
+        }
+    }
+    window.addEventListener('storage', onStorage)
+    /** Reloads the plugins, this one last (its reload ends this copy); the next copy shows the result. `stuck` need a restart. */
+    async function reloadPlugins (names, stuck = []) {
+        const done = [], failed = [...stuck]
         for (const n of [...names].sort((a, b) => (a === 'tabby-groups') - (b === 'tabby-groups'))) {
             if (n === 'tabby-groups') {
-                window.__tgAfterReload = { done: [...done, n], failed }
+                window.__tgAfterReload = { done: [...done, n], failed: [...failed] }
             }
             try {
                 await window[pluginGlobal(n)].reload()
@@ -270,6 +297,7 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed }) {
         }
     }
     function dispose () {
+        window.removeEventListener('storage', onStorage)
         buttonTimers.forEach(clearInterval)
         buttonsEl.remove()
         hideToast()

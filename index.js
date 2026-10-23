@@ -1162,11 +1162,13 @@ function install (injector) {
         let rules = []
         let buttonRules = []
         autoResume = false
+        autoReload = true
         try {
             const file = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8'))
             rules = file.icons ?? []
             buttonRules = file.buttons ?? []
             autoResume = file.autoResume === true
+            autoReload = file.autoReload !== false
         } catch (e) {
             if (e.code !== 'ENOENT') {
                 console.warn('tabby-groups: cannot read', userIconsFile, e.message)
@@ -1197,7 +1199,9 @@ function install (injector) {
         }))
         queueAutoResume()
     }
-    const buttonBar = createButtons({ open, drawIcon, hideTip, isDisposed: () => disposed })
+    // "autoReload": false in tabby-groups.json: an update only offers "Reload plugins" instead of reloading them itself.
+    let autoReload = true
+    const buttonBar = createButtons({ open, drawIcon, hideTip, isDisposed: () => disposed, autoReload: () => autoReload })
     /** This plugin's reload: drop its modules from the require cache and install the files on disk again. */
     function reload () {
         const dir = require('path').dirname(require.resolve('./index.js'))
