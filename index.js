@@ -1578,6 +1578,13 @@ function install (injector) {
                     ? { row, group: g, where: f < 0.5 ? 'above' : 'first' }
                     : { row, group: g, where: f < 0.5 ? 'last' : 'below' }
             }
+        } else if (!row) {
+            // The free space under the last row: the end of the list, outside every group.
+            const bar = document.querySelector('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar')?.getBoundingClientRect()
+            const last = [...document.querySelectorAll('.tab-bar > .tabs > :is(tab-header, .tg-header, .tg-foot):not(.tg-hidden)')].pop()
+            if (bar && last && e.clientX >= bar.left && e.clientX <= bar.right && e.clientY > last.getBoundingClientRect().bottom && e.clientY < bar.bottom) {
+                dropIntent = { row: last, where: 'end' }
+            }
         }
         showDropMark()
     }
@@ -1591,7 +1598,7 @@ function install (injector) {
             return
         }
         const r = i.row.getBoundingClientRect()
-        let y = ['after', 'first', 'below'].includes(i.where) ? r.bottom : r.top
+        let y = ['after', 'first', 'below', 'end'].includes(i.where) ? r.bottom : r.top
         // The last tab of a panel holds the panel's bottom gap as padding; the line marks the tab's own edge, above that gap.
         if (i.where === 'after' && i.row.matches('.tg-last')) {
             y -= parseFloat(getComputedStyle(i.row).paddingBottom) || 0
@@ -1664,6 +1671,9 @@ function install (injector) {
         } else if (i.tab) {
             join(i.tab.__tg ?? null)
             place(i.tab, i.where !== 'before')
+        } else if (i.where === 'end') {
+            join(null)
+            place(app.tabs.at(-1), true)
         } else if (i.where === 'first' || i.where === 'above') {
             join(i.where === 'first' ? i.group.name : i.group.parent)
             place(others(i.group)[0], false)
@@ -1754,6 +1764,8 @@ function install (injector) {
         let parent, anchor, after
         if (i.tab) {
             [parent, anchor, after] = [i.tab.__tg ?? null, i.tab, i.where !== 'before']
+        } else if (i.where === 'end') {
+            [parent, anchor, after] = [null, app.tabs.filter(t => !ms.includes(t)).at(-1), true]
         } else {
             const rest = subtree(i.group.name).filter(t => !ms.includes(t))
             const inside = i.where === 'first' || i.where === 'last'
