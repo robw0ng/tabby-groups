@@ -1240,6 +1240,10 @@ function install (injector) {
     // Session kind and folder per pane. Nothing polls: a pane is inspected when it opens, after Enter,
     // and when its title or full-screen state changes, each debounced into a single process-tree read.
     async function inspect (term) {
+        // A tab of another plugin (a tabby-files tab) sets its own __tgInfo and has no shell to read.
+        if (!('frontendReady$' in term)) {
+            return
+        }
         const info = term.__tgInfo ??= { kind: profileKind(term), cwd: null }
         let procs = []
         try {
