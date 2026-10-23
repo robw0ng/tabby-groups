@@ -44,7 +44,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup |
 | Collapse or expand | Click the group header |
 | Leave a group | Right-click the tab > Remove from group |
-| Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along. If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. |
+| Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along. If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
 | Cancel a drag | Press Escape |
 
 ## Works with tabby-remote

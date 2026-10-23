@@ -453,12 +453,7 @@ function install (injector) {
                     { label: 'Remove from group', click: () => removeTab(tab) },
                 )
             }
-            const moveTo = async to => {
-                const r = await windowsApi.move(tab, to)
-                if (!r.ok) {
-                    injector.get(core.NotificationsService).error(`Could not move the tab: ${r.why}`)
-                }
-            }
+            const moveTo = async to => moveFailed(await windowsApi.move(tab, to))
             items.push({
                 label: 'Move to window',
                 submenu: [
@@ -1086,7 +1081,22 @@ function install (injector) {
         }
         return params
     }
-    const windowsApi = createWindows({ app, injector, core, recovery, top, opened: tab => watch(tab), isDisposed: () => disposed })
+    const windowsApi = createWindows({ app, injector, core, recovery, top, aim: e => aimAt(e), opened: (tab, intent) => {
+        watch(tab)
+        // The tab or group aimed at may have gone while the tab opened.
+        if (intent && app.tabs.includes(tab) && (!intent.tab || app.tabs.includes(intent.tab)) && (!intent.group || groups.has(intent.group.name))) {
+            applyDrop(tab, intent)
+        }
+    }, isDisposed: () => disposed })
+    const moveFailed = r => r && !r.ok && injector.get(core.NotificationsService).error(`Could not move the tab: ${r.why}`)
+    // A tab dragged across a terminal enters its split drop zones, and Tabby still splits it there when the drop is
+    // outside the window. Such a drop is a move to another window (or none), never a split.
+    const origTabDropped = SplitTab?.prototype.onTabDropped
+    if (origTabDropped) {
+        SplitTab.prototype.onTabDropped = function (tab, zone) {
+            return windowsApi.droppedOutside(tab) ? undefined : origTabDropped.call(this, tab, zone)
+        }
+    }
 
     // Types the resume command once the restored pane's shell is ready (whenever its tab is first shown). Until then the
     // command stays the pane's resume, so a restart before the tab was opened still brings the session back later.
@@ -1533,8 +1543,10 @@ function install (injector) {
             dragging = !!tab
             if (dragging) {
                 startDrop(tab)
+                windowsApi.dragStart(tab)
             } else {
                 endDrop()
+                windowsApi.dragEnd()?.then(moveFailed)
                 queueRender()
             }
         }),
@@ -1611,6 +1623,18 @@ function install (injector) {
             }
         }
         showDropMark()
+    }
+
+    /** Where a tab dropped at this client point would land in the side bar, as onDragMove decides it; null off every row. */
+    function aimAt (e) {
+        if (!document.querySelector('.tabs-on-left, .tabs-on-right')) {
+            return null
+        }
+        onDragMove(e)
+        const i = dropIntent
+        dropIntent = null
+        showDropMark()
+        return i
     }
 
     function showDropMark () {
@@ -1868,6 +1892,9 @@ function install (injector) {
         app.renameTab = origRename
         app.duplicateTab = origDuplicate
         app.toggleTabPinned = origTogglePin
+        if (origTabDropped) {
+            SplitTab.prototype.onTabDropped = origTabDropped
+        }
         if (origRemovePane && origUpdateTitle) {
             SplitTab.prototype.removeTab = origRemovePane
             SplitTab.prototype.updateTitle = origUpdateTitle
