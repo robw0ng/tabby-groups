@@ -1,6 +1,6 @@
 // Applies the recommended Tabby settings for tabby-groups through Tabby's own ConfigService, while Tabby runs
 // (never by editing config.yaml, which Tabby would overwrite):
-//   node tabby-setup.mjs [--port 9222] [--dry-run]
+//   node tabby-setup.mjs [--port 9222] [--dry-run] [--only shell-integration]
 // Each setting changes only while it still has Tabby's default (or an unusable value); a choice the user made stays.
 // Prints one line per setting, "name: before → after" or "name: value (kept)". Exit 0 when done (or nothing to do),
 // 2 when the DevTools port is closed (the manual steps are printed instead), 1 on any other error.
@@ -8,6 +8,7 @@ const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const port = opt('port', '9222');
 const dryRun = args.includes('--dry-run');
+const only = opt('only', null);   // 'shell-integration': skip the config settings (claude-toolbelt's sync uses this)
 
 const MANUAL = `Tabby is not running with --remote-debugging-port=${port}. Set these by hand in Tabby's Settings:
   - Window → Tabs → Tabs location: Left (or Right)
@@ -25,7 +26,7 @@ const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', () => { console.log(MANUAL); process.exit(2); }, { once: true }); });
 
 // Runs inside Tabby; returns the report lines.
-const apply = async (dryRun) => {
+const apply = async (dryRun, only) => {
   const { ɵgetLContext } = require('@angular/core');
   const core = require('tabby-core'), terminal = require('tabby-terminal');
   const injector = ɵgetLContext(document.querySelector('app-root')).lView[9];
@@ -34,6 +35,7 @@ const apply = async (dryRun) => {
   const lines = [];
   let changed = false;
   const set = (name, before, after, write) => {
+    if (only) return;
     if (after === undefined || after === before) { lines.push(`${name}: ${before} (kept)`); return; }
     lines.push(`${name}: ${before} → ${after}${dryRun ? ' (dry run)' : ''}`);
     if (!dryRun) { write(); changed = true; }
@@ -72,7 +74,7 @@ const apply = async (dryRun) => {
   return { lines, saved: changed };
 };
 
-const expression = `(${apply})(${dryRun})`;
+const expression = `(${apply})(${dryRun}, ${JSON.stringify(only)})`;
 const r = await new Promise((resolve) => {
   ws.addEventListener('message', (e) => resolve(JSON.parse(e.data)), { once: true });
   ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }));
