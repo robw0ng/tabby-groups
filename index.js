@@ -7,6 +7,7 @@ const { resumeCommand } = require('./resume')
 const { SHELLS, APPS, CLAUDE_TITLE, shellOf, claudeSessionId, processList, osCwd, promptCwd, taskShells } = require('./processes')
 const { createButtons } = require('./buttons')
 const { createAgent } = require('./agent')
+const { createInbox } = require('./inbox')
 const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
@@ -41,6 +42,7 @@ function install (injector) {
     }
     // Set by dispose(). Work still in flight (a process-tree read, a shell wait) must not draw over the next install.
     let disposed = false
+    const inbox = createInbox({ app, isDisposed: () => disposed })
     const tint = g => g.color ?? NO_COLOR
     /** How many levels in a row, up from this group, share their parent's colour: the number of shading steps. */
     const shadeOf = g => {
@@ -1283,6 +1285,7 @@ function install (injector) {
             return
         }
         const info = term.__tgInfo ??= { kind: profileKind(term), cwd: null }
+        inbox.watchInput(term)
         let procs = []
         try {
             procs = await processList(await term.session?.pty?.getPID())
@@ -1322,6 +1325,8 @@ function install (injector) {
 
     const agentState = createAgent({ app, top, queueRender, inspect, isDisposed: () => disposed })
     const { updateAgent, readAsking, setAsking, readCompacting, setCompacting, setBackground, markSeen } = agentState
+    const onAgentEvent = e => inbox.onAgent(e.detail.tab)
+    window.addEventListener('tabby-groups:agent', onAgentEvent)
     function onWindowFocus () {
         if (app.activeTab) {
             markSeen(app.activeTab)
@@ -1879,6 +1884,8 @@ function install (injector) {
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
         agentState.dispose()
+        window.removeEventListener('tabby-groups:agent', onAgentEvent)
+        inbox.dispose()
         userIconsWatch?.close()
         buttonBar.dispose()
         windowsApi.dispose()
@@ -1984,10 +1991,10 @@ function install (injector) {
         return out.join('\n')
     }
     /**
-     * Types `text` into the one pane whose title is `name` (else the one that contains it) and presses Enter, without
-     * focusing it. `caller` is the pid of the asking process: a pane with that pid under its shell is refused.
+     * Sends `text` to the one pane whose title is `name` (else the one that contains it), without focusing it: a Claude
+     * with a known session through its inbox (inbox.js), any other pane typed in with Enter. `caller` is the pid of the asking process: a pane with that pid under its shell is refused.
      * `claudeOnly`: refuse a pane that is not running Claude Code (a message from another computer, see tabby-remote).
-     * Returns { ok: true } or { ok: false, why }.
+     * Returns { ok: true, tab, via: 'inbox' | 'typed' } or { ok: false, why }.
      */
     async function say (name, text, { caller, claudeOnly } = {}) {
         // claudeOnly narrows before matching: a shell tab with the same title must not make a Claude tab ambiguous.
@@ -2010,11 +2017,12 @@ function install (injector) {
                 return { ok: false, why: `"${titleOf(pane)}" is the caller's own tab` }
             }
         }
-        // Text and Enter in one write reads as a paste to Claude Code, which then takes the Enter as a new line.
-        pane.sendInput(String(text).replace(/\r?\n/g, ' '))
-        await new Promise(r => setTimeout(r, 150))
-        pane.sendInput('\r')
-        return { ok: true, tab: titleOf(pane) }
+        // A Claude with a known session takes it through its inbox, never typed over the user (inbox.js).
+        const via = pane.__tgInfo?.kind === 'claude' ? await inbox.deliver(pane, text) : null
+        if (!via) {
+            await inbox.typeIn(pane, text)
+        }
+        return { ok: true, tab: titleOf(pane), via: via ?? 'typed' }
     }
     /** The title of the pane whose shell runs process `pid` (the caller's own tab), or null. */
     async function tabOf (pid) {

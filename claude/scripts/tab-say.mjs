@@ -38,7 +38,7 @@ if (computer) {
     console.error('tab-say: ' + (r?.why ?? 'no answer from Tabby'));
     process.exit(1);
   }
-  console.log(tab ? `tab-say: typed into "${r.tab}" on ${computer}` : JSON.stringify({ computer, chats: r.chats }));
+  console.log(tab ? `tab-say: ${r.via === 'inbox' ? 'in the inbox of' : 'typed into'} "${r.tab}" on ${computer}` : JSON.stringify({ computer, chats: r.chats }));
   process.exit(0);
 }
 
@@ -57,4 +57,4 @@ if (!result?.ok) {
   console.error('tab-say: ' + (result?.why ?? 'no answer from Tabby'));
   process.exit(1);
 }
-console.log(`tab-say: typed into "${result.tab}"`);
+console.log(`tab-say: ${result.via === 'inbox' ? 'in the inbox of' : 'typed into'} "${result.tab}"`);

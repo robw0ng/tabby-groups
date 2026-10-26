@@ -83,3 +83,10 @@ node test-resume.js
 ```
 
 Checks the command that resumes a Claude Code session after a restart, and its quoting for PowerShell and POSIX shells.
+
+```sh
+node test-inbox.js
+node claude/scripts/inbox.test.mjs
+```
+
+Check the inbox: a message for a Claude tab is queued, never typed over a draft or a question, and an idle Claude gets one nudge per new message; the hook hands each message over once.

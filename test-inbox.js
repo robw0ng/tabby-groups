@@ -1,0 +1,76 @@
+// node test-inbox.js: the inbox's choices (inbox.js) on fake panes, without Tabby.
+const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+
+process.env.CLAUDE_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-inbox-'))
+const { createInbox, inboxDir, NUDGE } = require('./inbox')
+const id = '11111111-2222-3333-4444-555555555555'
+const wait = ms => new Promise(r => setTimeout(r, ms))
+
+function pane (state, extra = {}) {
+    const p = { sent: [], sendInput (d) { this.sent.push(d) }, __tgInfo: { kind: 'claude', sessionId: id, agent: { state, ...extra } } }
+    return p
+}
+
+;(async () => {
+    const inbox = createInbox({ app: {}, isDisposed: () => false })
+    try {
+        // Busy: queued only, nothing typed.
+        const busy = pane('busy')
+        inbox.watchInput(busy)
+        assert.strictEqual(await inbox.deliver(busy, 'hi'), 'inbox')
+        assert.deepStrictEqual(busy.sent, [])
+        assert.match(fs.readFileSync(path.join(inboxDir, id + '.jsonl'), 'utf8'), /"text":"hi"/)
+
+        // Idle and clear: the nudge, as text then Enter, not counted as the user's typing.
+        const idle = pane('waiting')
+        inbox.watchInput(idle)
+        await inbox.onAgent(idle)
+        await wait(200)
+        assert.ok(idle.sent[0].startsWith(NUDGE) && idle.sent[1] === '\r' && idle.sent.length === 2)
+        assert.ok(!idle.__tgDraft && !idle.__tgTyped)
+        // A session without the hook keeps its file: no second nudge until a new message arrives.
+        await inbox.onAgent(idle)
+        assert.strictEqual(idle.sent.length, 2)
+
+        // Asking: never typed into (a key would answer the question).
+        const asking = pane('waiting', { asking: { kind: 'question' } })
+        inbox.watchInput(asking)
+        await inbox.onAgent(asking)
+        assert.deepStrictEqual(asking.sent, [])
+
+        // A draft holds the nudge; Enter sends the user's box, then Esc empties a new one and the nudge follows.
+        const typing = pane('waiting')
+        inbox.watchInput(typing)
+        typing.sendInput('half a sent')
+        assert.ok(typing.__tgDraft)
+        await inbox.onAgent(typing)
+        assert.deepStrictEqual(typing.sent, ['half a sent'])
+        typing.sendInput('ence\r')
+        assert.ok(!typing.__tgDraft)
+        typing.sendInput('x')
+        typing.sendInput('\x1b')
+        assert.ok(!typing.__tgDraft)
+        // Typed just now: it waits for 3 s of quiet.
+        await inbox.onAgent(typing)
+        assert.strictEqual(typing.sent.length, 4)
+        typing.__tgTyped = Date.now() - 5000
+        await inbox.onAgent(typing)
+        await wait(200)
+        assert.ok(typing.sent[4].startsWith(NUDGE) && typing.sent.length === 6)
+
+        // No session id: not queued, so say() types it as before.
+        const unknown = pane('waiting')
+        unknown.__tgInfo.sessionId = null
+        assert.strictEqual(await inbox.deliver(unknown, 'x'), null)
+        console.log('test-inbox: all passed')
+    } finally {
+        inbox.dispose()
+        fs.rmSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true, force: true })
+    }
+})().catch(e => {
+    console.error(e)
+    process.exit(1)
+})
