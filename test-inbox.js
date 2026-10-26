@@ -35,11 +35,19 @@ function pane (state, extra = {}) {
         await inbox.onAgent(idle)
         assert.strictEqual(idle.sent.length, 2)
 
-        // Asking: never typed into (a key would answer the question).
-        const asking = pane('waiting', { asking: { kind: 'question' } })
-        inbox.watchInput(asking)
-        await inbox.onAgent(asking)
-        assert.deepStrictEqual(asking.sent, [])
+        // A menu question or a permission prompt: never typed into (a key would answer it).
+        for (const asked of [{ kind: 'question' }, { kind: 'permission' }]) {
+            const asking = pane('waiting', { asking: asked })
+            inbox.watchInput(asking)
+            await inbox.onAgent(asking)
+            assert.deepStrictEqual(asking.sent, [])
+        }
+        // A question asked in plain text waits at a normal prompt: the nudge goes in.
+        const texted = pane('waiting', { asking: { kind: 'question', source: 'text' } })
+        inbox.watchInput(texted)
+        await inbox.onAgent(texted)
+        await wait(200)
+        assert.ok(texted.sent[0]?.startsWith(NUDGE))
 
         // A draft holds the nudge; Enter sends the user's box, then Esc empties a new one and the nudge follows.
         const typing = pane('waiting')

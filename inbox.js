@@ -66,7 +66,9 @@ function createInbox ({ app, isDisposed }) {
         }
         const agent = pane.__tgInfo.agent
         const quietFor = Date.now() - (pane.__tgTyped ?? 0)
-        if (agent?.state !== 'waiting' || agent.asking || pane.__tgDraft) {
+        // A menu or a permission prompt takes keys as answers; a question asked in plain text waits at a normal prompt.
+        const answering = agent?.asking && agent.asking.source !== 'text'
+        if (agent?.state !== 'waiting' || answering || pane.__tgDraft) {
             return
         }
         if (quietFor < QUIET_MS) {
