@@ -69,6 +69,29 @@ function pane (state, extra = {}) {
         await wait(200)
         assert.ok(typing.sent[4].startsWith(NUDGE) && typing.sent.length === 6)
 
+        // Mouse, scroll and focus reports from a full-screen app are not typing: no draft, no quiet wait.
+        const tui = pane('waiting')
+        inbox.watchInput(tui)
+        tui.sendInput('\x1b[<35;10;5M')
+        tui.sendInput('\x1b[I')
+        tui.sendInput('\x1b[<64;3;3M\x1b[O')
+        assert.ok(!tui.__tgDraft && !tui.__tgTyped)
+        tui.sendInput('\x1b[A')
+        assert.ok(!tui.__tgDraft)
+
+        // A pane wrapped by an older version is wrapped again; the old wrapper's draft logic no longer runs.
+        const old = pane('waiting')
+        const orig = old.sendInput
+        old.__tgInputWatched = true
+        old.sendInput = function (d) {
+            if (!this.__tgSaying) this.__tgDraft = true
+            return orig.call(this, d)
+        }
+        inbox.watchInput(old)
+        old.sendInput('\x1b[I')
+        assert.ok(!old.__tgDraft, 'the old wrapper set a draft')
+        assert.deepStrictEqual(old.sent, ['\x1b[I'])
+
         // No session id: not queued, so say() types it as before.
         const unknown = pane('waiting')
         unknown.__tgInfo.sessionId = null

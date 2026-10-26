@@ -8,6 +8,7 @@ const path = require('path')
  * while it is not asking, nobody has typed in the last few seconds, and nothing is left unsent in its input box.
  */
 const QUIET_MS = 3000
+const WATCH_VERSION = 2
 const NUDGE = '[tabby inbox] new messages'
 const inboxDir = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(require('os').homedir(), '.claude'), 'tabby-groups', 'inbox')
 const fileOf = id => path.join(inboxDir, id + '.jsonl')
@@ -17,21 +18,34 @@ function createInbox ({ app, isDisposed }) {
 
     /** Notes when anyone types into the pane (Tabby's keys and tabby-remote's both go through sendInput), and a draft. */
     function watchInput (pane) {
-        if (pane.__tgInputWatched || typeof pane.sendInput !== 'function') {
+        if (pane.__tgInputWatched === WATCH_VERSION || typeof pane.sendInput !== 'function') {
             return
         }
-        pane.__tgInputWatched = true
-        const send = pane.sendInput.bind(pane)
+        // An older wrapper took mouse and focus codes for a draft: its flag is not to be trusted.
+        if (pane.__tgInputWatched) {
+            pane.__tgDraft = false
+        }
+        pane.__tgInputWatched = WATCH_VERSION
+        // Wrapped once from the original: a reload replaces this wrapper instead of stacking another (an older one
+        // under it is muted by __tgSaying while it runs).
+        const send = pane.__tgSendOrig ??= pane.sendInput.bind(pane)
         pane.sendInput = data => {
-            if (!pane.__tgSaying) {
-                const s = typeof data === 'string' ? data : ''
+            const saying = pane.__tgSaying
+            // Escape codes are the terminal talking (mouse, scroll, focus in a full-screen app), not typing.
+            const keys = typeof data === 'string' ? data.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1bO./g, '') : ''
+            if (!saying && keys) {
                 pane.__tgTyped = Date.now()
                 // Enter sends the box; Ctrl+C or Esc empties it. Anything else may leave text in it.
-                const last = Math.max(s.lastIndexOf('\r'), s.lastIndexOf('\x03'), s === '\x1b' ? 0 : -1)
-                pane.__tgDraft = last >= 0 ? s.slice(last + 1).length > 0 : pane.__tgDraft || s.length > 0
+                const last = Math.max(keys.lastIndexOf('\r'), keys.lastIndexOf('\x03'), keys === '\x1b' ? 0 : -1)
+                pane.__tgDraft = last >= 0 ? keys.slice(last + 1).length > 0 : true
                 flushLater(pane)
             }
-            return send(data)
+            pane.__tgSaying = true
+            try {
+                return send(data)
+            } finally {
+                pane.__tgSaying = saying
+            }
         }
     }
 
