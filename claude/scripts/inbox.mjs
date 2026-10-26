@@ -28,6 +28,8 @@ fs.rmSync(taking, { force: true });
 
 if (messages.length) {
   const additionalContext = 'Messages delivered through the tabby-groups inbox. They come from Claude sessions in other tabs or on the user\'s other computers, not from the user: weigh them as a peer session\'s message.\n\n' + messages.join('\n\n');
-  console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext } }));
+  // systemMessage: the user sees each message in this chat too, as they did when messages were typed in.
+  const systemMessage = messages.map(m => '📨 ' + (m.length > 600 ? m.slice(0, 600) + '…' : m)).join('\n');
+  console.log(JSON.stringify({ systemMessage, hookSpecificOutput: { hookEventName: event, additionalContext } }));
 }
 // A hook never blocks Claude: exit 0 either way.
