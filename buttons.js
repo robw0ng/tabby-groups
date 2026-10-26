@@ -10,6 +10,8 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed, autoReload }) {
      * "icons" }]. A click types the command into a new tab that stays open. With "check", the button shows only while the
      * check (run from Tabby's own process at start and every checkEveryMinutes, default 30) exits 10; its stdout is the
      * tooltip, and ✕ hides it until that stdout changes. Exit 0 means nothing new; any other exit is logged.
+     * "alwaysShow": true keeps a button with a check in the bar when there is nothing new too, plain, so a click can
+     * force the update any time; it turns into the update button while the check reports one.
      * Tabby reads its own toolbar once at start, so the plugin draws these buttons itself.
      */
     const buttonState = new Map()
@@ -238,34 +240,37 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed, autoReload }) {
         }
     }
     const buttonsEl = Object.assign(document.createElement('div'), { className: 'tg-buttons' })
+    /** The update a check reported and the user has not dismissed, or null. */
+    function pendingUpdate (b) {
+        const out = buttonState.get(b.label)
+        if (!b.check || out == null) {
+            return null
+        }
+        let dismissed = null
+        try {
+            dismissed = localStorage.getItem(dismissKey(b))
+        } catch { }
+        return dismissed !== sha1(out) ? out : null
+    }
     function renderButtons () {
         const bar = [...document.querySelectorAll('.tab-bar > .btn-group.background')].pop()
-        const shown = userButtons.filter(b => {
-            const out = buttonState.get(b.label)
-            if (!b.check || running.has(b.label)) {
-                return true
-            }
-            let dismissed = null
-            try {
-                dismissed = localStorage.getItem(dismissKey(b))
-            } catch { }
-            return out != null && dismissed !== sha1(out)
-        })
+        const shown = userButtons.filter(b => !b.check || b.alwaysShow || running.has(b.label) || pendingUpdate(b) != null)
         if (!bar || !shown.length) {
             buttonsEl.remove()
             return
         }
         buttonsEl.replaceChildren(...shown.flatMap(b => {
-            const out = buttonState.get(b.label)
+            const out = pendingUpdate(b)
             const busy = running.has(b.label)
-            const btn = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button' + (b.check ? ' tg-update' : '') + (busy ? ' tg-running' : '') })
+            const update = out != null
+            const btn = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button' + (update || (b.check && !b.alwaysShow) ? ' tg-update' : '') + (busy ? ' tg-running' : '') })
             btn.append(b.emoji || b.path || b.paths
                 ? drawIcon({ emoji: b.emoji, path: b.path, paths: b.paths, stroke: !!b.stroke, color: b.color ?? 'currentColor' })
                 : Object.assign(document.createElement('i'), { className: `fas fa-${b.icon || 'terminal'}` }))
             // One icon at any side-bar width: "Update available" and the check's lines live in the tooltip.
-            btn.dataset.tgTip = busy ? `${b.label}: running…` : b.check ? `Update available: ${b.label}\n${out}` : b.label
+            btn.dataset.tgTip = busy ? `${b.label}: running…` : update ? `Update available: ${b.label}\n${out}` : b.check ? `${b.label}: nothing new. Click to update anyway.` : b.label
             btn.addEventListener('click', () => pressButton(b))
-            if (!b.check || busy) {
+            if (!update || busy) {
                 return [btn]
             }
             const x = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-button-x', textContent: '✕' })
