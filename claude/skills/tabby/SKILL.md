@@ -87,7 +87,7 @@ It types the message into that tab and presses Enter, without focusing it. A bus
 
 ## Talk to a chat on another computer
 
-With tabby-remote on both computers and the two linked (Tabby Settings > Phone access), a Claude chat here can message a Claude tab there, over the home network only:
+With tabby-remote on both computers and the two linked once (Tabby Settings › Devices › Your computers), a Claude chat here can message a Claude tab there, over the home network only:
 
 ```sh
 node <plugin>/scripts/tab-say.mjs --computer <name>                              # the Claude tabs there
