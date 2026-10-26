@@ -22,11 +22,12 @@ const put = (...texts) => fs.writeFileSync(file, texts.map(text => JSON.stringif
 try {
   assert.strictEqual(hook('PostToolUse'), null, 'no inbox: no output');
 
-  put('[from ROB-SWIFT] one', '[from ROB-SWIFT] two');
+  const reply = ' (reply: node tab-say.mjs "x" "<reply>" --computer ROB-SWIFT, from the tabby-groups plugin)';
+  put('[from ROB-SWIFT] one' + reply, '[from ROB-SWIFT] two');
   const out = hook('PostToolUse');
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolUse');
-  assert.match(out.hookSpecificOutput.additionalContext, /not from the user[\s\S]*one\n\n\[from ROB-SWIFT\] two$/);
-  assert.strictEqual(out.systemMessage, '📨 [from ROB-SWIFT] one\n📨 [from ROB-SWIFT] two', 'the user sees each message');
+  assert.match(out.hookSpecificOutput.additionalContext, /not from the user[\s\S]*one \(reply: [^\n]*\n\n\[from ROB-SWIFT\] two$/);
+  assert.strictEqual(out.systemMessage, 'inbox · [from ROB-SWIFT] one\ninbox · [from ROB-SWIFT] two', 'the user sees each message, without the reply command');
   assert.ok(!fs.existsSync(file), 'taken messages are gone');
   assert.strictEqual(hook('UserPromptSubmit'), null, 'each message is delivered once');
 
