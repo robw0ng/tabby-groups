@@ -1986,12 +1986,16 @@ function install (injector) {
     /**
      * Types `text` into the one pane whose title is `name` (else the one that contains it) and presses Enter, without
      * focusing it. `caller` is the pid of the asking process: a pane with that pid under its shell is refused.
+     * `claudeOnly`: refuse a pane that is not running Claude Code (a message from another computer, see tabby-remote).
      * Returns { ok: true } or { ok: false, why }.
      */
-    async function say (name, text, { caller } = {}) {
+    async function say (name, text, { caller, claudeOnly } = {}) {
         const { pane, why } = onePane(name)
         if (!pane) {
             return { ok: false, why }
+        }
+        if (claudeOnly && pane.__tgInfo?.kind !== 'claude') {
+            return { ok: false, why: `"${titleOf(pane)}" is not a Claude tab` }
         }
         if (!pane.session) {
             return { ok: false, why: `"${titleOf(pane)}" was not opened since Tabby started; open it first` }
@@ -2010,6 +2014,15 @@ function install (injector) {
         await new Promise(r => setTimeout(r, 150))
         pane.sendInput('\r')
         return { ok: true, tab: titleOf(pane) }
+    }
+    /** The title of the pane whose shell runs process `pid` (the caller's own tab), or null. */
+    async function tabOf (pid) {
+        for (const pane of app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])) {
+            if (pane.session && (await processList(await pane.session.pty?.getPID())).some(p => p.pid === pid)) {
+                return titleOf(pane)
+            }
+        }
+        return null
     }
     /** The one pane whose title is `name` (else the one that contains it), or { why }. `whole`: the one tab, with its panes as one. */
     function onePane (name, { whole } = {}) {
@@ -2037,6 +2050,8 @@ function install (injector) {
         return pane ? windowsApi.move(pane, to) : { ok: false, why }
     }
     window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
+        // For tabby-remote's talk between computers; its presence also says this copy refuses non-Claude tabs there.
+        sayToClaude: (name, text) => say(name, text, { claudeOnly: true }), tabOf,
         move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
         renderSettings: host => userIconsFile && renderSettings(host, userIconsFile) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
