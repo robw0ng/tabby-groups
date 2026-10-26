@@ -284,6 +284,8 @@ function createButtons ({ open, drawIcon, hideTip, isDisposed, autoReload }) {
             })
             return [btn, x]
         }))
+        // shortcut: an in-place reload has left an old copy's bar behind (cause not found); drop it rather than show two.
+        document.querySelectorAll('.tg-buttons').forEach(e => e !== buttonsEl && e.remove())
         if (buttonsEl.parentElement !== bar) {
             bar.prepend(buttonsEl)
         }
