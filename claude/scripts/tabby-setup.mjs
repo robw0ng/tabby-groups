@@ -13,7 +13,8 @@ const MANUAL = `Tabby is not running with --remote-debugging-port=${port}. Set t
   - Window → Tabs → Tabs location: Left (or Right)
   - Profiles & connections → Default profile: ${process.platform === 'win32' ? 'PowerShell Core (PowerShell 7)' : 'zsh'}
   - Color scheme: deep (only if it is still "Tabby Default")
-  - Appearance → Custom CSS: add  .activity-indicator { display: none !important; }`;
+  - Appearance → Custom CSS: add  .activity-indicator { display: none !important; }
+  - Application → Shell integration: on ("Open Tabby here" in the Explorer / Finder right-click menu)`;
 
 let page;
 try {
@@ -58,6 +59,14 @@ const apply = async (dryRun) => {
   const hasRule = /\.activity-indicator\s*\{[^}]*display:\s*none/.test(css);
   set('custom CSS', hasRule ? 'hides the activity indicator' : 'no activity-indicator rule', hasRule ? undefined : 'hides the activity indicator',
     () => { s.appearance.css = (css.trimEnd() ? css.trimEnd() + '\n' : '') + RULE; });
+
+  // Tabby's own "Shell integration": "Open Tabby here" in the Explorer / Finder right-click menu. Not a config value, so not set().
+  const platform = injector.get(core.PlatformService);
+  if (platform.isShellIntegrationSupported()) {
+    const on = await platform.isShellIntegrationInstalled();
+    lines.push(on ? 'shell integration: on (kept)' : `shell integration: off → on${dryRun ? ' (dry run)' : ''}`);
+    if (!on && !dryRun) { await platform.installShellIntegration(); changed = true; }
+  }
 
   if (changed) await cfg.save();
   return { lines, saved: changed };

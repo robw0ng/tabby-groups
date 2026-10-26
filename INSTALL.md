@@ -117,6 +117,7 @@ Add `--dry-run` to see the changes without saving them. Exit code 2 means the po
 | Profiles & connections → Default profile | Windows: PowerShell Core (PowerShell 7), if installed; macOS: zsh | New tabs, and Claude Code tabs resumed after a restart, use this profile. Windows PowerShell 5.1 cannot read a PowerShell 7 profile. |
 | Color scheme | deep, if it is still "Tabby Default" | The recommended dark scheme; a scheme the user chose stays |
 | Appearance → Custom CSS | add `.activity-indicator { display: none !important; }` | Hides Tabby's activity dot; the plugin shows its own state marks |
+| Application → Shell integration | on | "Open Tabby here" on a folder, inside a folder and on the desktop (Windows 11: under "Show more options"); Finder services on macOS. Tabby's own feature, so Tabby keeps the menu pointing at itself after updates |
 
 Do not edit Tabby's `config.yaml` while Tabby runs: Tabby overwrites it.
 
