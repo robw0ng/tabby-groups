@@ -1990,7 +1990,8 @@ function install (injector) {
      * Returns { ok: true } or { ok: false, why }.
      */
     async function say (name, text, { caller, claudeOnly } = {}) {
-        const { pane, why } = onePane(name)
+        // claudeOnly narrows before matching: a shell tab with the same title must not make a Claude tab ambiguous.
+        const { pane, why } = onePane(name, { only: claudeOnly ? p => p.__tgInfo?.kind === 'claude' : undefined })
         if (!pane) {
             return { ok: false, why }
         }
@@ -2024,22 +2025,30 @@ function install (injector) {
         }
         return null
     }
-    /** The one pane whose title is `name` (else the one that contains it), or { why }. `whole`: the one tab, with its panes as one. */
-    function onePane (name, { whole } = {}) {
+    /**
+     * The one pane whose title is `name` (else the one that contains it), or { why }. `#<n>` is the tab numbered n in the
+     * side bar, for when titles tie. `whole`: the one tab, with its panes as one. `only`: the panes that may match.
+     */
+    function onePane (name, { whole, only } = {}) {
         const clean = s => String(s ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim().toLowerCase()
         const want = clean(name)
-        const panes = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
+        let panes = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
         // A split tab's own title can differ from every pane's (a custom title, or an app's title in the pane).
         if (whole) {
             panes.push(...app.tabs.filter(t => !panes.includes(t)))
         }
-        const exact = panes.filter(p => clean(titleOf(p)) === want)
-        let found = exact.length ? exact : want ? panes.filter(p => clean(titleOf(p)).includes(want)) : []
+        if (only) {
+            panes = panes.filter(only)
+        }
+        const num = /^#(\d+)$/.exec(String(name).trim())
+        const exact = num ? panes.filter(p => app.tabs.indexOf(top(p)) + 1 === +num[1]) : panes.filter(p => clean(titleOf(p)) === want)
+        let found = exact.length || num ? exact : want ? panes.filter(p => clean(titleOf(p)).includes(want)) : []
         if (whole) {
             found = [...new Set(found.map(top))]
         }
+        const label = p => `#${app.tabs.indexOf(top(p)) + 1} ${titleOf(p)}`
         return found.length === 1 ? { pane: found[0] }
-            : { why: found.length ? `${found.length} tabs match "${name}": ${found.map(titleOf).join(', ')}` : `no tab matches "${name}"` }
+            : { why: found.length ? `${found.length} tabs match "${name}": ${found.map(label).join(', ')}; pick one by number, e.g. "#${app.tabs.indexOf(top(found[0])) + 1}"` : `no tab matches "${name}"` }
     }
     /**
      * Moves the tab `name` (a tab object, or a title as in say) to window `to`: its number in windows(), or 'new'. A split
