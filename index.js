@@ -1463,7 +1463,7 @@ function install (injector) {
         let mailEl = iconEl?.querySelector(':scope > .tg-mail')
         if (iconEl && inbox.unread(tab)) {
             mailEl ??= iconEl.appendChild(Object.assign(document.createElement('span'), { className: 'tg-mail', innerHTML: '<i class="fas fa-envelope"></i>' }))
-            mailEl.dataset.tgTip = 'New inbox messages: they reach Claude with your next message (or Enter)'
+            mailEl.dataset.tgTip = 'New inbox messages: they reach Claude with your next message'
         } else {
             mailEl?.remove()
         }

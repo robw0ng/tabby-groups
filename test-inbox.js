@@ -69,6 +69,14 @@ function pane (state, extra = {}) {
         await wait(200)
         assert.ok(typing.sent[4].startsWith(NUDGE) && typing.sent.length === 6)
 
+        // Tabby's own keyboard sends Buffers: they make and clear a draft too.
+        const keyboard = pane('waiting')
+        inbox.watchInput(keyboard)
+        keyboard.sendInput(Buffer.from('x'))
+        assert.ok(keyboard.__tgDraft)
+        keyboard.sendInput(Buffer.from('\r'))
+        assert.ok(!keyboard.__tgDraft)
+
         // Mouse, scroll and focus reports from a full-screen app are not typing: no draft, no quiet wait.
         const tui = pane('waiting')
         inbox.watchInput(tui)

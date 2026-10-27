@@ -8,7 +8,7 @@ const path = require('path')
  * while it is not asking, nobody has typed in the last few seconds, and nothing is left unsent in its input box.
  */
 const QUIET_MS = 3000
-const WATCH_VERSION = 2
+const WATCH_VERSION = 3
 const NUDGE = '[tabby inbox] new messages'
 const inboxDir = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(require('os').homedir(), '.claude'), 'tabby-groups', 'inbox')
 const fileOf = id => path.join(inboxDir, id + '.jsonl')
@@ -21,7 +21,7 @@ function createInbox ({ app, isDisposed, queueRender = () => {} }) {
         if (pane.__tgInputWatched === WATCH_VERSION || typeof pane.sendInput !== 'function') {
             return
         }
-        // An older wrapper took mouse and focus codes for a draft: its flag is not to be trusted.
+        // An older wrapper took mouse and focus codes for a draft, or missed Tabby's Buffer keys: its flag is not to be trusted.
         if (pane.__tgInputWatched) {
             pane.__tgDraft = false
         }
@@ -31,8 +31,10 @@ function createInbox ({ app, isDisposed, queueRender = () => {} }) {
         const send = pane.__tgSendOrig ??= pane.sendInput.bind(pane)
         pane.sendInput = data => {
             const saying = pane.__tgSaying
+            // Tabby's own keyboard sends a Buffer, tabby-remote and pastes a string: both count.
+            const text = typeof data === 'string' ? data : data instanceof Uint8Array ? Buffer.from(data).toString('utf8') : ''
             // Escape codes are the terminal talking (mouse, scroll, focus in a full-screen app), not typing.
-            const keys = typeof data === 'string' ? data.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1bO./g, '') : ''
+            const keys = text ? text.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1bO./g, '') : ''
             if (!saying && keys) {
                 pane.__tgTyped = Date.now()
                 // Enter sends the box; Ctrl+C or Esc empties it. Anything else may leave text in it.
