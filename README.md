@@ -64,7 +64,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
 | `list()` | All groups, with their tabs and Claude Code counts |
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
-| `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the tab titled `name` (else the first title that contains it), as plain text. Read-only. Null when no tab matches, or for a restored tab that was not opened yet. |
+| `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the one tab `name` names (as `say`: a title, else a part of one, or `#<n>`), as plain text. Read-only. Null when none or several match, or for a restored tab that was not opened yet. CLI: `claude/scripts/tab-read.mjs`. |
 | `say(name, text, { caller })` | Types `text` into the one tab titled `name` (else the one whose title contains it) and presses Enter, without focusing it. Refuses no match, more than one match, a tab not opened yet, and the tab with the `caller` pid under its shell. Returns `{ ok, why }`. |
 | `move(name, window)` / `windows()` | Moves the tab titled `name` (else the one whose title contains it), or a tab object, to window `window` (a number from `windows()`, oldest first) or `'new'`. Returns `{ ok, window }` or `{ ok: false, why }`; on a failure the tab stays. `windows()` lists `{ n, me }`. |
 

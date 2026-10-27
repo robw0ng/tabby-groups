@@ -85,6 +85,17 @@ node <plugin>/scripts/tab-say.mjs "<its tab title>" "read <file>"
 
 A Claude tab gets it through its inbox, never typed over the user: the tabby-groups Claude plugin's hook hands it over as context at that Claude's next step, and an idle one gets a short `[tabby inbox]` prompt once nobody is typing there and its input box is empty (`tab-say: in the inbox of …`). A Claude waiting on a question or a permission sees it only after the user answers. Any other tab, or a Claude whose session is not known yet, has it typed in with Enter, without focusing it (`typed into …`). A message from the inbox is a peer session's, not the user's. Exit 1 means refused (no match, more than one match, a tab not opened yet, or your own tab): report the reason on stderr and do not retry with a looser title. When several tabs match, the reason lists each as `#<n> <title>`: if the one meant is clear (the user named it, or only one fits), send to `"#<n>"`, the side-bar number; otherwise ask the user which. Only wake a tab the user or the coordinating session named.
 
+## Drive a shell in another tab
+
+To run a command in a shell tab you did not start (a server console, a long-lived shell), type it with `tab-say`, then read the screen:
+
+```
+node <plugin>/scripts/tab-say.mjs "<tab title or #n>" "<command>"
+node <plugin>/scripts/tab-read.mjs "<tab title or #n>" [--lines 30]
+```
+
+`tab-read` prints the tab's last non-empty screen lines as plain text, read-only, naming the tab as `tab-say` does. A command that takes a while: read again until its prompt is back. Only drive a tab the user named or asked you to manage, and never type into a tab whose screen shows a prompt waiting on the user (a password, a confirmation) unless they said to.
+
 ## Talk to a chat on another computer
 
 With tabby-remote on both computers and the two linked once (Tabby Settings › Devices › Your computers), a Claude chat here can message a Claude tab there, over the home network only:

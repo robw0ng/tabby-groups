@@ -1982,12 +1982,9 @@ function install (injector) {
 
     /** The user's icons from tabby-groups.json (tab kind "user:<name>"), for other front ends such as a phone side bar. */
     const icons = () => userIcons.map(({ title, process, ...icon }) => icon)
-    /** The last `lines` non-empty lines of the pane whose title is `name` (else contains it), as plain text; null when no pane matches or it has no buffer yet. Read-only. */
+    /** The last `lines` non-empty lines of the one pane `name` names (as say: a title, else a part of one, or "#<n>"), as plain text; null when none or several match, or it has no buffer yet. Read-only. */
     function tabText (name, lines = 30) {
-        const clean = s => String(s ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim().toLowerCase()
-        const want = clean(name)
-        const panes = app.tabs.flatMap(t => t.getAllTabs?.() ?? [t])
-        const pane = panes.find(p => clean(titleOf(p)) === want) ?? panes.find(p => clean(titleOf(p)).includes(want))
+        const { pane } = onePane(name)
         // A lazily restored pane has an empty frontend but no session until it is first shown.
         const buffer = pane?.session && pane.frontend?.xterm?.buffer?.active
         if (!buffer) return null
