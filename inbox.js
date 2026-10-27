@@ -75,6 +75,7 @@ function createInbox ({ app, isDisposed, queueRender = () => {} }) {
 
     /** Types the nudge when the pane is idle and clear; otherwise looks again once typing pauses or the state changes. */
     async function flush (pane) {
+        watchInput(pane) // a pane open before a reload still runs the old wrapper until here
         const id = pane.__tgInfo?.sessionId
         const change = id && pending(id)
         if (isDisposed() || !change || pane.__tgNudged === change) {
