@@ -13,7 +13,7 @@ const NUDGE = '[tabby inbox] new messages'
 const inboxDir = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(require('os').homedir(), '.claude'), 'tabby-groups', 'inbox')
 const fileOf = id => path.join(inboxDir, id + '.jsonl')
 
-function createInbox ({ app, isDisposed }) {
+function createInbox ({ app, isDisposed, queueRender = () => {} }) {
     const timers = new Map()
 
     /** Notes when anyone types into the pane (Tabby's keys and tabby-remote's both go through sendInput), and a draft. */
@@ -107,6 +107,7 @@ function createInbox ({ app, isDisposed }) {
         }
         fs.mkdirSync(inboxDir, { recursive: true })
         fs.appendFileSync(fileOf(id), JSON.stringify({ text: String(text), at: Date.now() }) + '\n')
+        queueRender() // the tab's mail badge
         await flush(pane)
         return 'inbox'
     }
@@ -115,7 +116,10 @@ function createInbox ({ app, isDisposed }) {
     const onAgent = t => (t.getAllTabs?.() ?? [t]).forEach(p => flush(p))
 
     const dispose = () => timers.forEach(clearTimeout)
-    return { watchInput, deliver, typeIn, onAgent, dispose }
+    /** Whether the Claude in `pane` has messages its hook has not taken yet: the tab shows a mail badge. */
+    const unread = pane => !!(pane.__tgInfo?.sessionId && pending(pane.__tgInfo.sessionId))
+
+    return { watchInput, deliver, typeIn, onAgent, unread, dispose }
 }
 
 module.exports = { createInbox, inboxDir, NUDGE }

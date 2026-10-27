@@ -210,6 +210,12 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
     box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
 }
 .tg-roll-cmp { color: #d7cff9; }
+/* A Claude tab with inbox messages not yet taken: a blue badge at the icon's top-right. */
+.tg-icon > .tg-mail {
+    position: absolute; top: -5px; right: -7px; width: 12px; height: 12px; border-radius: 50%;
+    background: #7ab8ff; color: #111; font-size: 7px; line-height: 12px; text-align: center;
+    box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
+}
 /* The user's toolbar buttons (tabby-groups.json "buttons"), before Tabby's own right-hand buttons. */
 .tg-buttons { display: flex; flex: none; }
 .tg-buttons > .btn { height: 38px; }

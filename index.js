@@ -42,7 +42,7 @@ function install (injector) {
     }
     // Set by dispose(). Work still in flight (a process-tree read, a shell wait) must not draw over the next install.
     let disposed = false
-    const inbox = createInbox({ app, isDisposed: () => disposed })
+    const inbox = createInbox({ app, isDisposed: () => disposed, queueRender: () => queueRender() })
     const tint = g => g.color ?? NO_COLOR
     /** How many levels in a row, up from this group, share their parent's colour: the number of shading steps. */
     const shadeOf = g => {
@@ -1458,6 +1458,14 @@ function install (injector) {
             cmpEl.dataset.tgTip = `Compacting context (${agent.compacting.trigger})`
         } else {
             cmpEl?.remove()
+        }
+        // Inbox messages not yet taken (a busy Claude, or a draft held the nudge): a blue mail badge at the icon's top-right.
+        let mailEl = iconEl?.querySelector(':scope > .tg-mail')
+        if (iconEl && inbox.unread(tab)) {
+            mailEl ??= iconEl.appendChild(Object.assign(document.createElement('span'), { className: 'tg-mail', innerHTML: '<i class="fas fa-envelope"></i>' }))
+            mailEl.dataset.tgTip = 'New inbox messages: they reach Claude with your next message (or Enter)'
+        } else {
+            mailEl?.remove()
         }
         // A tab pinned inside its group shows a pin where Tabby shows its own (between the number and the icon).
         let pinEl = el.querySelector(':scope > .tg-tab-pin')
