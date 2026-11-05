@@ -1,4 +1,5 @@
 const fs = require('fs')
+const { pins } = require('./picker')
 
 const h = (tag, props = {}, ...children) => {
     const el = Object.assign(document.createElement(tag), props)
@@ -20,29 +21,46 @@ function readSettings (file) {
     }
 }
 
+/** A pin the switch owns: the profile alone. An entry with a label, an icon, a folder or a command is the file's to edit. */
+const barePin = (e, profile) => pins(e, profile) && !e.label && !e.icon && !e.cwd && !e.command
+const pickerOf = settings => Array.isArray(settings?.picker) ? settings.picker : []
+
+/** The settings with a profile pinned in the picker by its id (stable through a rename, unique) or its bare pins removed. */
+function setPin (settings, profile, on) {
+    const picker = pickerOf(settings).filter(e => !barePin(e, profile))
+    return { ...settings, picker: on ? [...picker, { profile: profile.id }] : picker }
+}
+
 /**
- * Settings > Tab groups. The switch is stored in tabby-groups.json, which the plugin watches, so the file stays the one
- * place for the plugin's settings. A file that does not parse is never overwritten.
+ * Settings > Tab groups. The switches are stored in tabby-groups.json, which the plugin watches, so the file stays the
+ * one place for the plugin's settings. A file that does not parse is never overwritten. `profiles`: Tabby's profiles (a promise).
  */
-function renderSettings (host, file) {
+function renderSettings (host, file, profiles) {
     const settings = readSettings(file)
     const error = h('div', { className: 'text-danger mt-2' })
-    const setAutoResume = (on, input) => {
+    // Reads the file again, so an edit made since the page opened is kept.
+    const write = (change, input, on) => {
         const current = readSettings(file)
         if (!current) {
             input.checked = !on
             error.textContent = `${file} is not valid JSON; fix it first.`
             return
         }
-        fs.writeFileSync(file, JSON.stringify({ ...current, autoResume: on }, null, 2) + '\n')
+        fs.writeFileSync(file, JSON.stringify(change(current), null, 2) + '\n')
         error.textContent = ''
     }
+    const pinList = h('div')
     host.replaceChildren(
         h('h3', { className: 'mb-3', textContent: 'Claude tabs' }),
         line('Resume Claude tabs after a restart',
             'Restored Claude tabs start again by themselves, two at a time, without a click. Off: a tab resumes when you first open it.',
-            toggle(settings?.autoResume === true, setAutoResume)),
+            toggle(settings?.autoResume === true, (on, input) => write(s => ({ ...s, autoResume: on }), input, on))),
+        h('h3', { className: 'mt-4 mb-3', textContent: 'New-tab picker' }),
+        h('div', { className: 'text-muted mb-2', textContent: 'A right-click on free side-bar space shows the default profile, then the profiles pinned here and the other "picker" entries in tabby-groups.json.' }),
+        pinList,
         error)
+    profiles?.then(list => pinList.replaceChildren(...list.filter(p => !p.isTemplate).map(p =>
+        line(p.name, '', toggle(pickerOf(settings).some(e => barePin(e, p)), (on, input) => write(s => setPin(s, p, on), input, on))))))
 }
 
-module.exports = { renderSettings }
+module.exports = { renderSettings, setPin }

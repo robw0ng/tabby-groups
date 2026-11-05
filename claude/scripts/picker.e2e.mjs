@@ -68,22 +68,25 @@ const results = [];
 const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail });
 let p = await points();
 
+const filterHeight = () => run(`() => document.querySelector('.tg-picker-q')?.offsetHeight ?? -1`);
+const defaultName = await run(`async () => { const core = require('tabby-core'); const inj = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9]; const id = inj.get(core.ConfigService).store.terminal?.profile; const all = await inj.get(core.ProfilesService).getProfiles(); return (all.find(p => p.id === id) ?? all.find(p => p.type === 'local' && p.isBuiltin))?.name }`);
 await rightClick(p.free);
 let s = await state();
-check('right-click on free space opens the picker', s.picker && s.rows.length > 0, s.rows);
+check('right-click on free space opens the picker: the default profile first, "New empty group" last', s.picker && s.rows[0] === defaultName && s.rows.at(-1) === 'New empty group', s.rows);
+check('no filter box before typing', (await filterHeight()) === 0);
 await key('Escape');
 check('Escape closes it', !(await state()).picker);
 
 await rightClick(p.free);
 await call('Input.insertText', { text: 'zzz-no-match' });
 await sleep(200);
-check('typing filters', (await state()).rows.length === 0);
+check('typing shows the filter box and filters', (await state()).rows.length === 0 && (await filterHeight()) > 0);
 await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 5, y: 5, button: 'left', buttons: 1, clickCount: 1 });
 await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 5, y: 5, button: 'left', buttons: 0, clickCount: 1 });
 await sleep(300);
 check('a click outside closes it', !(await state()).picker);
 
-// Root space: the first profile opens at the end, outside every group.
+// Root space: the default profile opens at the end, outside every group.
 let before = (await state()).tabs.length;
 await rightClick(p.free);
 await key('Enter');
@@ -91,11 +94,10 @@ await sleep(2500);
 s = await state();
 check('Enter opens the first row at the root end', s.tabs.length === before + 1 && s.tabs[s.tabs.length - 1].group === null, s.tabs);
 
-// The inner group's empty footer: ↓ then Enter opens the second row in that group.
+// The inner group's empty footer: Enter opens the default profile in that group.
 p = await points();
 before = s.tabs.length;
 await rightClick(p.foot);
-await key('ArrowDown');
 await key('Enter');
 await sleep(2500);
 s = await state();
@@ -179,6 +181,6 @@ s = await state();
 check('right-click on a tab opens no picker', !s.picker);
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); a Files tab row with tabby-files installed; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (rows about as tall as Tabby\'s own menu, thin separators, no labels); a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; the phone side bar (tabby-remote) still loads.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

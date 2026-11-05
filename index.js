@@ -966,21 +966,14 @@ function install (injector) {
         e.stopPropagation()
         e.preventDefault()
         const group = groupAtPoint(bar, e.clientX, e.clientY)
-        // As Tabby's own profile list: no hidden profiles, built-ins only when Tabby shows them.
-        const cfg = injector.get(core.ConfigService).store
-        const profiles = (await injector.get(core.ProfilesService).getProfiles())
-            .filter(p => p.id && !cfg.profileBlacklist?.includes(p.id) && (cfg.terminal?.showBuiltinProfiles || !p.isBuiltin))
+        const profiles = await injector.get(core.ProfilesService).getProfiles()
         if (disposed) {
             return
         }
-        const rows = pickerItems({
-            profiles,
-            pinned: pickerPins,
-            files: !!window.__tabbyFiles?.open,
-            group,
-            // Local folders only: a linked computer's Files path or an SSH pane's folder would open the home folder.
-            cwds: app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).map(p => p.__tgInfo?.cwd).filter(c => c && require('fs').existsSync(c)),
-        })
+        // Tabby's default profile (Settings → Terminal), else its first built-in local shell, as Tabby falls back.
+        const id = injector.get(core.ConfigService).store.terminal?.profile
+        const defaultProfile = profiles.find(p => p.id === id) ?? profiles.find(p => p.type === 'local' && p.isBuiltin) ?? null
+        const rows = pickerItems({ defaultProfile, profiles, pinned: pickerPins, files: !!window.__tabbyFiles?.open, group })
         closePicker?.()
         // Tabby appends a new tab at the end, outside every group; open() files it in `group` before it types a command.
         closePicker = showPicker(rows, e.clientX, e.clientY, async ({ spec }) => {
@@ -2214,7 +2207,7 @@ function install (injector) {
         // For tabby-remote's talk between computers; its presence also says this copy refuses non-Claude tabs there.
         sayToClaude: (name, text) => say(name, text, { claudeOnly: true }), tabOf,
         deleteGroup, move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
-        renderSettings: host => userIconsFile && renderSettings(host, userIconsFile) }
+        renderSettings: host => userIconsFile && renderSettings(host, userIconsFile, injector.get(core.ProfilesService).getProfiles()) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
     if (window.__tgAfterReload) {
         const result = window.__tgAfterReload

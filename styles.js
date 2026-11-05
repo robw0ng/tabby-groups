@@ -311,8 +311,13 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 .tg-sep { height: 1px; background: #333; margin: 4px 0; }
 .tg-item { padding: 6px 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .tg-item:hover, .tg-item.tg-active { background: #2e2e2e; }
+/* The picker is compact, as Tabby's own context menu: short rows, thin separators, and the filter only once typed in. */
+.tg-picker.tg-menu { min-width: 180px; padding: 4px; }
 .tg-picker > div { max-height: 60vh; overflow-y: auto; }
-.tg-picker-q { width: 100%; margin-bottom: 4px; padding: 5px 8px; border: 1px solid #333; border-radius: 4px; background: #161616; color: inherit; font: inherit; outline: none; }
+.tg-picker .tg-item { padding: 3px 10px; }
+.tg-picker .tg-sep { margin: 2px 0; }
+.tg-picker-q { width: 100%; margin-bottom: 4px; padding: 3px 8px; border: 1px solid #333; border-radius: 4px; background: #161616; color: inherit; font: inherit; outline: none; }
+.tg-picker-q:placeholder-shown { height: 0; margin: 0; padding: 0; border: 0; opacity: 0; }
 .tg-item.tg-on::after { content: ' ✓'; opacity: .7; }
 .tg-label { padding: 4px 10px; font-size: 11px; opacity: .6; }
 
