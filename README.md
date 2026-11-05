@@ -15,6 +15,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | Drag and drop | Drop a tab on another tab to make a group, as on an iPhone. Drop on an edge to reorder. Drag a group header to move the whole group. |
 | Rename | Double-click a group name or a tab title to rename it in place |
 | New tab | Double-click empty space, or click a group's +, to open a tab in that group |
+| New-tab picker | Right-click empty space: Tabby's profiles, your pinned entries, a Files tab (with [tabby-files](https://github.com/robw0ng/tabby-files)) and the last 5 folders of open tabs. Type to filter, ↑/↓ and Enter, Esc or a click outside closes. The tab lands in the group whose space you clicked, else at the end outside every group. Pin entries in `tabby-groups.json`: `"picker": [{ "label", "icon"? (emoji), "profile"? (a profile name or id) \| "command"?, "cwd"? }]`, e.g. `{ "label": "Claude in C:\\webapp", "command": "claude", "cwd": "C:\\webapp" }`. A `command` is typed into the default shell. |
 | Session icons | Claude Code, Codex, Gemini, Node, Python, Docker, Vim, SSH, PowerShell, cmd, Bash, WSL and more |
 | Your own icons | `tabby-groups.json` in Tabby's settings folder: `{ "icons": [{ "name", "title"?, "process"?, "color"?, "emoji" \| "path" \| "paths", "stroke"? }] }`. `title` and `process` are patterns for the tab title and a command line under the tab. Edits apply at once. |
 | Your own buttons | `"buttons": [{ "label", "command", "cwd"?, "icon"? (Font Awesome name) \| "emoji" \| "path" \| "paths", "check"?, "checkEveryMinutes"? }]` in the same file. A button sits before Tabby's own toolbar buttons; a click types `command` into a new tab that stays open. With `check`, the button is an update: it shows (green, with a dot) only while the check exits 10 (run at start and every `checkEveryMinutes`, default 30); its tooltip says "Update available" and lists the check's output, and ✕ hides it until that output changes. With `"alwaysShow": true` it stays in the bar when there is nothing new too (plain, tooltip "nothing new"), so a click can force the update any time. A click runs `command` in the background (the icon spins), saves the output to a log, and shows a toast: "up to date ✓", the `problems`, or the `reload` plugins from a JSON object on the command's last line, with "Open log". On macOS, commands and checks run in the user's login shell. |
@@ -46,6 +47,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | Leave a group | Right-click the tab > Remove from group |
 | Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along. If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
 | Cancel a drag | Press Escape |
+| Pick what a new tab opens | Right-click empty space in the side bar, or a group's empty space |
 
 ## Works with tabby-remote
 
@@ -90,3 +92,10 @@ node claude/scripts/inbox.test.mjs
 ```
 
 Check the inbox: a message for a Claude tab is queued, never typed over a draft or a question, and an idle Claude gets one nudge per new message; the hook hands each message over once.
+
+```sh
+node test-picker.js
+node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
+```
+
+Check the new-tab picker: its rows, the filter and where the new tab lands; the e2e right-clicks in a test Tabby (it closes that window's tabs).

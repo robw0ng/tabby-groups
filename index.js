@@ -11,6 +11,7 @@ const { createInbox } = require('./inbox')
 const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
+const { pickerItems, showPicker } = require('./picker')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -884,6 +885,44 @@ function install (injector) {
     }
     document.addEventListener('dblclick', onBarDblClick, true)
 
+    // A right-click on the same free space opens the new-tab picker; the new tab lands as a double-click's would.
+    let closePicker = null
+    async function onBarContextMenu (e) {
+        const bar = e.target.closest?.('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar')
+        if (!bar || e.target.closest('tab-header, .tg-header, .tg-toolbar, .tg-buttons, .btn-group, .tg-name, .tg-tab-rename, .tg-resize, .tg-add')) {
+            return
+        }
+        e.stopPropagation()
+        e.preventDefault()
+        const group = groupAtPoint(bar, e.clientX, e.clientY)
+        // As Tabby's own profile list: no hidden profiles, built-ins only when Tabby shows them.
+        const cfg = injector.get(core.ConfigService).store
+        const profiles = (await injector.get(core.ProfilesService).getProfiles())
+            .filter(p => p.id && !cfg.profileBlacklist?.includes(p.id) && (cfg.terminal?.showBuiltinProfiles || !p.isBuiltin))
+        if (disposed) {
+            return
+        }
+        const rows = pickerItems({
+            profiles,
+            pinned: pickerPins,
+            files: !!window.__tabbyFiles?.open,
+            // Local folders only: a linked computer's Files path or an SSH pane's folder would open the home folder.
+            cwds: app.tabs.flatMap(t => t.getAllTabs?.() ?? [t]).map(p => p.__tgInfo?.cwd).filter(c => c && require('fs').existsSync(c)),
+        })
+        closePicker?.()
+        // Tabby appends a new tab at the end, outside every group; open() files it in `group` before it types a command.
+        closePicker = showPicker(rows, e.clientX, e.clientY, async ({ spec }) => {
+            if (!spec.files) {
+                return open({ ...spec, group })
+            }
+            const tab = await window.__tabbyFiles.open()
+            if (tab && group && !disposed) {
+                addTab(tab, group)
+            }
+        })
+    }
+    document.addEventListener('contextmenu', onBarContextMenu, true)
+
     const tooltip = createTooltip()
     const { hideTip } = tooltip
 
@@ -1194,9 +1233,11 @@ function install (injector) {
         }
     })()
     let userIcons = []
+    let pickerPins = []
     function loadUserIcons () {
         let rules = []
         let buttonRules = []
+        pickerPins = []
         autoResume = false
         autoReload = true
         try {
@@ -1205,6 +1246,7 @@ function install (injector) {
             buttonRules = file.buttons ?? []
             autoResume = file.autoResume === true
             autoReload = file.autoReload !== false
+            pickerPins = Array.isArray(file.picker) ? file.picker : []
         } catch (e) {
             if (e.code !== 'ENOENT') {
                 console.warn('tabby-groups: cannot read', userIconsFile, e.message)
@@ -1888,6 +1930,8 @@ function install (injector) {
         window.removeEventListener('focus', onWindowFocus)
         document.removeEventListener('dblclick', onTabDblClick, true)
         document.removeEventListener('dblclick', onBarDblClick, true)
+        document.removeEventListener('contextmenu', onBarContextMenu, true)
+        closePicker?.()
         tooltip.dispose()
         subs.forEach(s => s.unsubscribe())
         observer.disconnect()
@@ -1922,11 +1966,14 @@ function install (injector) {
      * @example await __tabbyGroups.open({ title: 'api', cwd: 'C:\\projects\\api', run: 'claude', group: 'api', parent: 'backend' })
      * @returns the new tab's 1-based number (plain JSON for returnByValue)
      */
-    async function open ({ title, command, args, cwd, run, group, parent, color } = {}) {
-        if (!command) {
+    async function open ({ title, profile, command, args, cwd, run, group, parent, color } = {}) {
+        if (profile) {
+            // A saved profile, in `cwd` when given (a pinned picker entry).
+            profile = cwd ? { ...profile, options: { ...profile.options, cwd } } : profile
+        } else if (!command) {
             ;({ command, args } = await defaultShell() ?? (IS_WIN ? { command: 'powershell.exe', args: ['-NoLogo'] } : { command: process.env.SHELL || '/bin/zsh', args: [] }))
         }
-        const inner = await injector.get(core.ProfilesService).openNewTabForProfile({
+        const inner = await injector.get(core.ProfilesService).openNewTabForProfile(profile ?? {
             type: 'local', name: title ?? command, options: { command, args, cwd, env: {} },
         })
         const tab = app.getParentTab(inner) ?? inner

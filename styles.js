@@ -304,7 +304,9 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 }
 .tg-sep { height: 1px; background: #333; margin: 4px 0; }
 .tg-item { padding: 6px 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
-.tg-item:hover { background: #2e2e2e; }
+.tg-item:hover, .tg-item.tg-active { background: #2e2e2e; }
+.tg-picker > div { max-height: 60vh; overflow-y: auto; }
+.tg-picker-q { width: 100%; margin-bottom: 4px; padding: 5px 8px; border: 1px solid #333; border-radius: 4px; background: #161616; color: inherit; font: inherit; outline: none; }
 .tg-item.tg-on::after { content: ' ✓'; opacity: .7; }
 .tg-label { padding: 4px 10px; font-size: 11px; opacity: .6; }
 

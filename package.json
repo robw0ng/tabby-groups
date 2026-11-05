@@ -1,6 +1,6 @@
 {
   "name": "tabby-groups",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Tab groups, session icons and search for Tabby's side tab bar",
   "keywords": [
     "tabby-plugin"
@@ -23,7 +23,8 @@
     "inbox.js",
     "tooltip.js",
     "settings.js",
-    "windows.js"
+    "windows.js",
+    "picker.js"
   ],
   "private": true
 }

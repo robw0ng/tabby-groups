@@ -1,0 +1,118 @@
+// node picker.e2e.mjs --port <a test Tabby's DevTools port>: checks the new-tab picker end to end with real right-clicks.
+// It closes every tab in that Tabby's first window, so never point it at your own Tabby. Tabs on the left or right.
+import { tabbyPages } from './tabby-window.mjs';
+
+const i = process.argv.indexOf('--port');
+const port = i > 0 ? process.argv[i + 1] : null;
+if (!port) {
+  console.error('usage: node picker.e2e.mjs --port <port> (use a test Tabby, not your own)');
+  process.exit(1);
+}
+const [page] = (await tabbyPages(port)) ?? [];
+if (!page) {
+  console.error(`picker.e2e: no DevTools port ${port}`);
+  process.exit(2);
+}
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener('open', r, { once: true }));
+let id = 0;
+const call = (method, params = {}) => new Promise((resolve, reject) => {
+  const n = ++id;
+  ws.addEventListener('message', function on (e) {
+    const m = JSON.parse(e.data);
+    if (m.id !== n) return;
+    ws.removeEventListener('message', on);
+    m.error ? reject(new Error(m.error.message)) : resolve(m.result);
+  });
+  ws.send(JSON.stringify({ id: n, method, params }));
+});
+const run = async (fn, arg) => {
+  const r = await call('Runtime.evaluate', { expression: `(${fn})(${JSON.stringify(arg)})`, awaitPromise: true, returnByValue: true });
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description);
+  return r.result.value;
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const rightClick = async ({ x, y }) => {
+  for (const type of ['mousePressed', 'mouseReleased']) await call('Input.dispatchMouseEvent', { type, x, y, button: 'right', buttons: type === 'mousePressed' ? 2 : 0, clickCount: 1 });
+  await sleep(400);
+};
+const key = async (k, code) => {
+  for (const type of ['rawKeyDown', 'keyUp']) await call('Input.dispatchKeyEvent', { type, key: k, code: code ?? k, windowsVirtualKeyCode: { Enter: 13, Escape: 27, ArrowDown: 40 }[k] });
+  await sleep(300);
+};
+const APP = `require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[8].app`;
+const state = () => run(`() => {
+  const app = ${APP};
+  return { picker: !!document.querySelector('.tg-picker'), rows: [...document.querySelectorAll('.tg-picker .tg-item')].map(e => e.textContent),
+    tabs: app.tabs.map(t => ({ title: t.customTitle || t.title, group: t.__tg ?? null })), menu: !!document.querySelector('.tg-menu:not(.tg-picker)') }
+}`);
+// Points in the side bar: a tab row, a group header, the inner group's footer, and the free space below the rows.
+const points = () => run(`() => {
+  const mid = e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } };
+  const list = document.querySelector('.tab-bar .tabs');
+  const l = list.getBoundingClientRect();
+  return { tab: mid(list.querySelector(':scope > tab-header')), header: mid(list.querySelector('.tg-header')),
+    foot: mid(list.querySelector('.tg-foot[data-group="inner"]')), free: { x: l.left + l.width / 2, y: l.bottom + 30 } };
+}`);
+
+// Setup: a loose tab, then outer > inner with one tab each; the last row is in a group.
+await run(`async () => {
+  const app = ${APP};
+  for (const t of [...app.tabs]) await app.closeTab(t, false, true);
+  await window.__tabbyGroups.open({ title: 'loose' });
+  await window.__tabbyGroups.open({ title: 'o1', group: 'outer' });
+  await window.__tabbyGroups.open({ title: 'i1', group: 'inner', parent: 'outer' });
+}`);
+await sleep(1500);
+const results = [];
+const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail });
+let p = await points();
+
+await rightClick(p.free);
+let s = await state();
+check('right-click on free space opens the picker', s.picker && s.rows.length > 0, s.rows);
+await key('Escape');
+check('Escape closes it', !(await state()).picker);
+
+await rightClick(p.free);
+await call('Input.insertText', { text: 'zzz-no-match' });
+await sleep(200);
+check('typing filters', (await state()).rows.length === 0);
+await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 5, y: 5, button: 'left', buttons: 1, clickCount: 1 });
+await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 5, y: 5, button: 'left', buttons: 0, clickCount: 1 });
+await sleep(300);
+check('a click outside closes it', !(await state()).picker);
+
+// Root space: the first profile opens at the end, outside every group.
+let before = (await state()).tabs.length;
+await rightClick(p.free);
+await key('Enter');
+await sleep(2500);
+s = await state();
+check('Enter opens the first row at the root end', s.tabs.length === before + 1 && s.tabs[s.tabs.length - 1].group === null, s.tabs);
+
+// The inner group's empty footer: ↓ then Enter opens the second row in that group.
+p = await points();
+before = s.tabs.length;
+await rightClick(p.foot);
+await key('ArrowDown');
+await key('Enter');
+await sleep(2500);
+s = await state();
+check('a group\'s space opens the tab in that group', s.tabs.length === before + 1 && s.tabs.filter((t) => t.group === 'inner').length === 2, s.tabs);
+
+// Unchanged: a tab row gets Tabby's menu, a group header gets the group menu, neither gets the picker.
+p = await points();
+await rightClick(p.header);
+s = await state();
+check('right-click on a group header keeps the group menu', s.menu && !s.picker);
+await key('Escape');
+// Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
+await rightClick(p.tab);
+s = await state();
+check('right-click on a tab opens no picker', !s.picker);
+
+for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); a Files tab row with tabby-files installed; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile.');
+ws.close();
+process.exit(results.every((r) => r.ok) ? 0 : 1);
