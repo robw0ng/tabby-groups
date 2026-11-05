@@ -76,5 +76,4 @@ assert.deepStrictEqual(setPin({ picker: { bad: 1 } }, wsl, true), { picker: [{ p
 // A pin of a missing profile is left out even with a command; a label that is not a string still filters.
 assert.deepStrictEqual(pickerItems({ profiles, pinned: [{ profile: 'gone', command: 'claude' }] }).map(r => r.label), ['New empty group'])
 assert.strictEqual(filterItems([{ label: 5 }], '5').length, 1)
-
 console.log('test-picker: all passed')

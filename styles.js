@@ -313,15 +313,17 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 .tg-item:hover, .tg-item.tg-active { background: #2e2e2e; }
 /* The picker is compact, as Tabby's own context menu: short rows, thin separators, and the filter only once typed in. */
 .tg-picker.tg-menu { min-width: 180px; padding: 4px; }
-.tg-picker-list { max-height: 60vh; overflow-y: auto; }
-.tg-picker .tg-item { display: flex; align-items: center; gap: 8px; padding: 3px 10px; }
+/* Sized to its rows, capped to the window (less the title and margins), so a scrollbar shows only when the rows overflow. */
+.tg-picker-list { max-height: min(60vh, calc(100vh - 50px)); overflow-y: auto; }
+.tg-picker .tg-item { display: flex; align-items: center; gap: 8px; padding: 3px 10px; line-height: 18px; }
 .tg-picker .tg-sep { margin: 2px 0; }
 .tg-picker-title { padding: 2px 10px 3px; font-size: 11px; opacity: .6; }
 /* Fixed width, so the labels line up whatever the icon. */
-.tg-pick-icon { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
+.tg-pick-icon { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; line-height: 16px; }
 .tg-pick-icon svg { width: 16px; height: 16px; }
 .tg-pick-icon img { max-width: 16px; max-height: 16px; }
-.tg-pick-plus { position: absolute; right: -4px; bottom: -4px; font-size: 10px; font-weight: bold; line-height: 1; }
+/* Nothing in an icon may reach past its row's padding: on the last row it would overflow the list and show a scrollbar. */
+.tg-pick-plus { position: absolute; right: -4px; bottom: 0; font-size: 10px; font-weight: bold; line-height: 8px; }
 .tg-picker-q { width: 100%; margin-bottom: 4px; padding: 3px 8px; border: 1px solid #333; border-radius: 4px; background: #161616; color: inherit; font: inherit; outline: none; }
 /* Out of the layout (yet focused, for the keys) until something is typed; then it takes the title's place. */
 .tg-picker-q:not(.tg-typed) { position: absolute; width: 0; height: 0; margin: 0; padding: 0; border: 0; opacity: 0; }

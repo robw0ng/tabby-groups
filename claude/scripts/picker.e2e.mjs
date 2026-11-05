@@ -76,8 +76,25 @@ check('right-click on free space opens the picker: the default profile first, "N
 check('no filter box before typing', (await filterHeight()) === 0);
 const top = await run(`() => { const m = document.querySelector('.tg-picker'); const t = m.querySelector('.tg-picker-title'); const i = [...m.querySelectorAll('.tg-pick-icon')]; return { gap: t.getBoundingClientRect().top - m.getBoundingClientRect().top - parseFloat(getComputedStyle(m).paddingTop) - parseFloat(getComputedStyle(m).borderTopWidth), title: t.textContent, lefts: [...new Set(i.map(e => { const r = document.createRange(); r.selectNodeContents(e.parentElement.lastChild); return Math.round(r.getBoundingClientRect().left) }))] } }`);
 check('"+ New tab" sits at the top with no gap, and the labels line up', top.title === '+ New tab' && Math.abs(top.gap) < 1 && top.lefts.length === 1, top);
+// Every scroll container in the picker: [scrollHeight, clientHeight], and whether the menu fits in the window.
+const scrolls = () => run(`() => { const m = document.querySelector('.tg-picker'); if (!m) return { boxes: [], fits: false }; return { boxes: [m, ...m.querySelectorAll('*')].filter(e => /auto|scroll/.test(getComputedStyle(e).overflowY)).map(e => [e.scrollHeight, e.clientHeight]), fits: m.getBoundingClientRect().bottom <= innerHeight } }`);
+let sc = await scrolls();
+check('a few rows show no scrollbar', sc.boxes.every(([h, c]) => h <= c) && sc.fits, sc);
 await key('Escape');
 check('Escape closes it', !(await state()).picker);
+
+// 40 pins (written to this test Tabby's tabby-groups.json, then put back): the list scrolls and the menu stays in the window.
+const pinsFile = await run(`() => { const path = require('path'); const fs = require('fs'); const core = require('tabby-core'); const inj = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9]; const f = path.join(inj.get(core.BOOTSTRAP_DATA).userPluginsPath, '..', 'tabby-groups.json'); const before = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null; const cur = before ? JSON.parse(before) : {}; fs.writeFileSync(f, JSON.stringify({ ...cur, picker: Array.from({ length: 40 }, (_, k) => ({ label: 'pin ' + k, command: 'echo ' + k })) })); return { f, before } }`);
+try {
+  await sleep(800);
+  await rightClick(p.free);
+  sc = await scrolls();
+  check('40 pins: the list scrolls, and the menu fits in the window', sc.boxes.some(([h, c]) => h > c) && sc.fits, sc);
+  await key('Escape');
+} finally {
+  await run(`(x) => { const fs = require('fs'); x.before === null ? fs.unlinkSync(x.f) : fs.writeFileSync(x.f, x.before) }`, pinsFile);
+  await sleep(800);
+}
 
 await rightClick(p.free);
 await call('Input.insertText', { text: 'zzz-no-match' });
