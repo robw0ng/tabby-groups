@@ -122,6 +122,24 @@ await sleep(2500);
 s = await state();
 check('a group\'s space opens the tab in that group', s.tabs.length === before + 1 && s.tabs.filter((t) => t.group === 'inner').length === 2, s.tabs);
 
+// A group header's "+": right-click opens the picker for that group (not the group menu); left-click is as before.
+const plusAt = () => run(`() => { const b = document.querySelector('.tg-header[data-group="outer"] .tg-add'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }`);
+const inOuter = (tabs) => tabs.filter((t) => t.group === 'outer').length;
+let plus = await plusAt();
+await rightClick(plus);
+s = await state();
+check('right-click on a group\'s "+" opens the picker for it, not the group menu', s.picker && !s.menu && s.rows.at(-1) === 'New empty subgroup', s);
+before = inOuter(s.tabs);
+await key('Enter');
+await sleep(2500);
+s = await state();
+check('a pick from it lands in that group', inOuter(s.tabs) === before + 1, s.tabs);
+plus = await plusAt();
+for (const type of ['mousePressed', 'mouseReleased']) await call('Input.dispatchMouseEvent', { type, ...plus, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });
+await sleep(2500);
+s = await state();
+check('left-click on "+" still opens a tab in the group, with no picker', !s.picker && inOuter(s.tabs) === before + 2, s.tabs);
+
 // Unchanged: a tab row gets Tabby's menu, a group header gets the group menu, neither gets the picker.
 p = await points();
 await rightClick(p.header);

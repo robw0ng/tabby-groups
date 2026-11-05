@@ -957,15 +957,17 @@ function install (injector) {
     document.addEventListener('dblclick', onBarDblClick, true)
 
     // A right-click on the same free space opens the new-tab picker; the new tab lands as a double-click's would.
+    // On a group header's "+" it opens for that group (this capture listener runs before the header's own menu).
     let closePicker = null
     async function onBarContextMenu (e) {
         const bar = e.target.closest?.('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar')
-        if (!bar || e.target.closest('tab-header, .tg-header, .tg-toolbar, .tg-buttons, .btn-group, .tg-name, .tg-tab-rename, .tg-resize, .tg-add')) {
+        const plus = e.target.closest?.('.tg-header .tg-add')
+        if (!bar || (!plus && e.target.closest('tab-header, .tg-header, .tg-toolbar, .tg-buttons, .btn-group, .tg-name, .tg-tab-rename, .tg-resize, .tg-add'))) {
             return
         }
         e.stopPropagation()
         e.preventDefault()
-        const group = groupAtPoint(bar, e.clientX, e.clientY)
+        const group = plus ? plus.closest('.tg-header').dataset.group : groupAtPoint(bar, e.clientX, e.clientY)
         const profiles = await injector.get(core.ProfilesService).getProfiles()
         if (disposed) {
             return
