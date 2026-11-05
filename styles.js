@@ -113,6 +113,12 @@ const CSS = `
     margin-left: calc(var(--tg-gap) * (1 + var(--tg-level, 0))); margin-right: calc(var(--tg-gap) * (1 + var(--tg-level, 0)));
     width: calc(100% - 2 * var(--tg-gap) * (1 + var(--tg-level, 0))) !important;
 }
+/* An empty group's slim row, in its panel like a tab (paintNesting colours it below the top level). */
+.tabs-on-left .tg-empty, .tabs-on-right .tg-empty {
+    flex: none; margin: 0 calc(var(--tg-gap) * (1 + var(--tg-level, 0))); padding: 4px 12px 6px; font-size: 11px; font-style: italic;
+    color: #9a9a9a; background-color: color-mix(in srgb, var(--tg-color) 20%, var(--tg-bg));
+}
+.tabs.tg-light.tg-light .tg-empty { color: #666666; }
 .tabs-on-left .tab-bar .tabs > .tg-last.tg-last, .tabs-on-right .tab-bar .tabs > .tg-last.tg-last { border-radius: 0 0 8px 8px; margin-bottom: var(--tg-gap); }
 .tabs-on-left .tab-bar .tabs > .tg-root.tg-last, .tabs-on-right .tab-bar .tabs > .tg-root.tg-last { border-radius: 8px; }
 
@@ -280,7 +286,7 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 
 /* Drop marks while dragging a tab in the side bar: a line between rows, or an outline on the tab to group with. */
 .tg-drop-line { position: fixed; z-index: 10000; height: 2px; border-radius: 1px; background: #86b7f7; pointer-events: none; }
-.tabs > tab-header.tg-drop-onto { outline: 2px solid #86b7f7; outline-offset: -2px; border-radius: 6px; }
+.tabs > tab-header.tg-drop-onto, .tabs > .tg-empty.tg-drop-onto { outline: 2px solid #86b7f7; outline-offset: -2px; border-radius: 6px; }
 .tabs > .tg-header.tg-dragging { opacity: 0.45; }
 /* A pane dragged from a split (Ctrl+Shift) brings its own placeholder into the list; it would push the rows from under the pointer. */
 .tabs-on-left .tabs > .cdk-drag-placeholder:not(tab-header), .tabs-on-right .tabs > .cdk-drag-placeholder:not(tab-header) { display: none !important; }

@@ -3,10 +3,11 @@
 
 /**
  * The picker's rows, in sections. `profiles` from ProfilesService (templates are skipped), `pinned` from tabby-groups.json
- * `picker`, `files` when tabby-files is loaded, `cwds` the folders of open panes in tab order (the bottom-most 5 win).
- * Each row is { section, label, spec }, where spec is what open() takes, or { files: true }.
+ * `picker`, `files` when tabby-files is loaded, `cwds` the folders of open panes in tab order (the bottom-most 5 win),
+ * `group` the group whose space was clicked (null: the top level).
+ * Each row is { section, label, spec }, where spec is what open() takes, or { files: true } or { newGroup: true }.
  */
-function pickerItems ({ profiles = [], pinned = [], files = false, cwds = [] }) {
+function pickerItems ({ profiles = [], pinned = [], files = false, cwds = [], group = null }) {
     const rows = []
     for (const p of profiles.filter(p => !p.isTemplate)) {
         rows.push({ section: 'Profiles', label: p.name, spec: { profile: p } })
@@ -25,6 +26,7 @@ function pickerItems ({ profiles = [], pinned = [], files = false, cwds = [] }) 
     for (const cwd of [...new Set(cwds.filter(Boolean).reverse())].slice(0, 5)) {
         rows.push({ section: 'Recent folders', label: cwd, spec: { cwd } })
     }
+    rows.push({ section: 'Groups', label: group ? 'New empty subgroup' : 'New empty group', spec: { newGroup: true } })
     return rows
 }
 
@@ -78,6 +80,8 @@ function showPicker (rows, x, y, choose) {
             active = (active + (e.key === 'ArrowDown' ? 1 : -1) + shown.length) % (shown.length || 1)
             draw()
         } else if (e.key === 'Enter') {
+            // Else the Enter's keypress lands in whatever the choice focuses (a new group's name field).
+            e.preventDefault()
             pick(shown[active])
         } else if (e.key === 'Escape') {
             close()

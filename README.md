@@ -11,6 +11,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | Feature | Detail |
 | --- | --- |
 | Groups | Name, colour, collapse, pin. Groups go inside groups, with no depth limit, drawn as nested panels. |
+| Empty groups | A group stays when its last tab moves out or closes, until you delete it (right-click its header > Delete group, offered only while it is empty). It shows as its header and a slim "Right-click to add a tab" row: at the end of its parent's panel, or at the end of the list. Drag a tab onto that row to fill it. The main window keeps its empty groups through a restart (in its localStorage); another window's end with that window, as its tabs do. The phone side bar (tabby-remote) does not show empty groups. |
 | Collapse | A collapsed group still shows the tab you are in, until you select another tab |
 | Drag and drop | Drop a tab on another tab to make a group, as on an iPhone. Drop on an edge to reorder. Drag a group header to move the whole group. |
 | Rename | Double-click a group name or a tab title to rename it in place |
@@ -42,10 +43,11 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | To | Do |
 | --- | --- |
 | Make a group | Drop a tab on another tab, or right-click a tab > Add to group > New group |
-| Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup |
+| Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup, delete (when empty) |
+| Make an empty group | Right-click empty space > New empty group; in a group's space, New empty subgroup. Type its name, then Enter. |
 | Collapse or expand | Click the group header |
 | Leave a group | Right-click the tab > Remove from group |
-| Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along. If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
+| Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along (when it was the group's last tab, the group also stays behind, empty). If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
 | Cancel a drag | Press Escape |
 | Pick what a new tab opens | Right-click empty space in the side bar, or a group's empty space |
 
@@ -62,6 +64,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `open({ title, command, args, cwd, run, group, parent, color })` | Opens a shell tab in a group and types `run` once the shell is ready |
 | `addTab(tab, group, { color, parent })` / `removeTab(tab)` | Puts a tab in a group, or takes it out |
 | `setCollapsed`, `setColor`, `setPinned`, `setParent`, `rename`, `ungroup` | Change a group |
+| `deleteGroup(name)` | Deletes an empty group and its (empty) subgroups. Returns false for a group with a tab under it. |
 | `setTabPinned(tab, pinned)` | Pins a tab inside its group |
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
 | `list()` | All groups, with their tabs and Claude Code counts |
@@ -98,4 +101,4 @@ node test-picker.js
 node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
 ```
 
-Check the new-tab picker: its rows, the filter and where the new tab lands; the e2e right-clicks in a test Tabby (it closes that window's tabs).
+Check the new-tab picker (its rows, the filter and where the new tab lands) and empty groups; the e2e right-clicks in a test Tabby (it closes that window's tabs).
