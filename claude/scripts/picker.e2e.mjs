@@ -43,7 +43,7 @@ const key = async (k, code) => {
 const APP = `require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[8].app`;
 const state = () => run(`() => {
   const app = ${APP};
-  return { picker: !!document.querySelector('.tg-picker'), rows: [...document.querySelectorAll('.tg-picker .tg-item')].map(e => e.textContent),
+  return { picker: !!document.querySelector('.tg-picker'), rows: [...document.querySelectorAll('.tg-picker .tg-item')].map(e => e.lastChild.textContent),
     tabs: app.tabs.map(t => ({ title: t.customTitle || t.title, group: t.__tg ?? null })), menu: !!document.querySelector('.tg-menu:not(.tg-picker)') }
 }`);
 // Points in the side bar: a tab row, a group header, the inner group's footer, and the free space below the rows.
@@ -74,6 +74,8 @@ await rightClick(p.free);
 let s = await state();
 check('right-click on free space opens the picker: the default profile first, "New empty group" last', s.picker && s.rows[0] === defaultName && s.rows.at(-1) === 'New empty group', s.rows);
 check('no filter box before typing', (await filterHeight()) === 0);
+const top = await run(`() => { const m = document.querySelector('.tg-picker'); const t = m.querySelector('.tg-picker-title'); const i = [...m.querySelectorAll('.tg-pick-icon')]; return { gap: t.getBoundingClientRect().top - m.getBoundingClientRect().top - parseFloat(getComputedStyle(m).paddingTop) - parseFloat(getComputedStyle(m).borderTopWidth), title: t.textContent, lefts: [...new Set(i.map(e => { const r = document.createRange(); r.selectNodeContents(e.parentElement.lastChild); return Math.round(r.getBoundingClientRect().left) }))] } }`);
+check('"+ New tab" sits at the top with no gap, and the labels line up', top.title === '+ New tab' && Math.abs(top.gap) < 1 && top.lefts.length === 1, top);
 await key('Escape');
 check('Escape closes it', !(await state()).picker);
 
@@ -181,6 +183,6 @@ s = await state();
 check('right-click on a tab opens no picker', !s.picker);
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (rows about as tall as Tabby\'s own menu, thin separators, no labels); a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; the phone side bar (tabby-remote) still loads.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

@@ -4,9 +4,9 @@ const assert = require('assert')
 const { pickerItems, filterItems } = require('./picker')
 const { setPin } = require('./settings')
 
-const pwsh = { id: 'local:pwsh', name: 'PowerShell' }
+const pwsh = { id: 'local:pwsh', name: 'PowerShell', icon: '<svg viewBox="0 0 16 16"></svg>', color: '#3b78ff' }
 const cmd = { id: 'local:cmd', name: 'CMD' }
-const wsl = { id: 'local:wsl', name: 'WSL' }
+const wsl = { id: 'local:wsl', name: 'WSL', icon: 'fab fa-linux' }
 const profiles = [pwsh, cmd, wsl, { id: 'ssh:t', name: 'SSH connection', isTemplate: true }]
 const pinned = [
     { profile: 'WSL' },
@@ -35,10 +35,27 @@ assert.deepStrictEqual(rows[0].spec, { profile: pwsh })
 assert.deepStrictEqual(rows[1].spec, { profile: wsl, cwd: undefined })
 assert.deepStrictEqual(rows[2].spec, { profile: cmd, cwd: undefined })
 assert.deepStrictEqual(rows[3].spec, { run: 'claude', cwd: 'C:\\webapp' })
-assert.strictEqual(rows[3].icon, '✳')
 assert.deepStrictEqual(rows[4].spec, { profile: pwsh, cwd: 'C:\\core' })
 assert.deepStrictEqual(rows[5].spec, { files: true })
 assert.deepStrictEqual(rows[6].spec, { newGroup: true })
+
+// Icons: a profile's markup or Font Awesome classes (with its colour); a pin's own icon (classes or text, never markup)
+// before its profile's; none for a command without one; the Files and group rows' icons are drawn by index.js.
+assert.deepStrictEqual(rows.map(r => r.icon), [
+    { html: pwsh.icon },
+    { fa: 'fab fa-linux', color: undefined },
+    null,
+    { text: '✳' },
+    { html: pwsh.icon },
+    { kind: 'files' },
+    { kind: 'group' },
+])
+const own = pickerItems({ profiles, pinned: [
+    { profile: 'WSL', icon: 'fas fa-star' }, { command: 'x', icon: '<img src=x onerror=alert(1)>' }, { command: 'y', icon: 5 }, { command: 'z', icon: 'robot' },
+] })
+assert.deepStrictEqual(own.map(r => r.icon), [{ fa: 'fas fa-star' }, { text: '<img src=x onerror=alert(1)>' }, null, { fa: 'fas fa-robot' }, { kind: 'group' }])
+// A profile's colour tints its Font Awesome icon.
+assert.deepStrictEqual(pickerItems({ defaultProfile: { name: 'C', icon: 'fas fa-terminal', color: '#f00' } })[0].icon, { fa: 'fas fa-terminal', color: '#f00' })
 
 // No other profile shows unless pinned; no tabby-files, no Files row; inside a group, a subgroup.
 assert.deepStrictEqual(pickerItems({ defaultProfile: pwsh, profiles }).map(r => r.label), ['PowerShell', 'New empty group'])

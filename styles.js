@@ -313,11 +313,19 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 .tg-item:hover, .tg-item.tg-active { background: #2e2e2e; }
 /* The picker is compact, as Tabby's own context menu: short rows, thin separators, and the filter only once typed in. */
 .tg-picker.tg-menu { min-width: 180px; padding: 4px; }
-.tg-picker > div { max-height: 60vh; overflow-y: auto; }
-.tg-picker .tg-item { padding: 3px 10px; }
+.tg-picker-list { max-height: 60vh; overflow-y: auto; }
+.tg-picker .tg-item { display: flex; align-items: center; gap: 8px; padding: 3px 10px; }
 .tg-picker .tg-sep { margin: 2px 0; }
+.tg-picker-title { padding: 2px 10px 3px; font-size: 11px; opacity: .6; }
+/* Fixed width, so the labels line up whatever the icon. */
+.tg-pick-icon { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
+.tg-pick-icon svg { width: 16px; height: 16px; }
+.tg-pick-icon img { max-width: 16px; max-height: 16px; }
+.tg-pick-plus { position: absolute; right: -4px; bottom: -4px; font-size: 10px; font-weight: bold; line-height: 1; }
 .tg-picker-q { width: 100%; margin-bottom: 4px; padding: 3px 8px; border: 1px solid #333; border-radius: 4px; background: #161616; color: inherit; font: inherit; outline: none; }
-.tg-picker-q:placeholder-shown { height: 0; margin: 0; padding: 0; border: 0; opacity: 0; }
+/* Out of the layout (yet focused, for the keys) until something is typed; then it takes the title's place. */
+.tg-picker-q:not(.tg-typed) { position: absolute; width: 0; height: 0; margin: 0; padding: 0; border: 0; opacity: 0; }
+.tg-picker-q.tg-typed + .tg-picker-title { display: none; }
 .tg-item.tg-on::after { content: ' ✓'; opacity: .7; }
 .tg-label { padding: 4px 10px; font-size: 11px; opacity: .6; }
 

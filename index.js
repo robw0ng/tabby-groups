@@ -987,6 +987,10 @@ function install (injector) {
             if (tab && group && !disposed) {
                 addTab(tab, group)
             }
+        }, {
+            // The Files tab's side-bar icon, and the group glyph (Settings → Tab groups) with a small plus.
+            files: () => drawIcon(ICONS.files),
+            group: () => Object.assign(document.createElement('span'), { innerHTML: '<i class="fas fa-layer-group"></i><span class="tg-pick-plus">+</span>' }),
         })
     }
     document.addEventListener('contextmenu', onBarContextMenu, true)
