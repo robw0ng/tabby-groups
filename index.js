@@ -692,7 +692,7 @@ function install (injector) {
                 rows.push({ el, chain, ...row })
             }
             add(makeHeader(g, k, k === 0 && !!rows.at(-1)?.chain.length, k > 0 && open(g)), { hidden: hideHead(g), kind: 'head' })
-            const empty = Object.assign(document.createElement('div'), { className: 'tg-empty', textContent: 'Right-click to add a tab' })
+            const empty = Object.assign(document.createElement('div'), { className: 'tg-empty', textContent: 'Empty' })
             empty.dataset.group = g.name
             add(empty, { hidden: !!q || shut(g), kind: 'empty' })
             emptyKids(g.name).forEach(c => { after = emitEmpty(c, after) })

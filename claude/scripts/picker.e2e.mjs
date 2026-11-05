@@ -168,11 +168,16 @@ await key('Enter');
 made = (await groupsNow()).find((g) => g.name === 'empty-e2e');
 check('it keeps its new name and stays with no tab', made?.tabs === 0);
 const emptyRow = `.tg-empty[data-group="empty-e2e"]`;
-check('it shows its header and an empty row', !!(await center(`.tg-header[data-group="empty-e2e"]`)) && !!(await center(emptyRow)));
+const emptyText = await run(`(sel) => document.querySelector(sel)?.textContent`, emptyRow);
+check('it shows its header, its +, and a muted "Empty" row', !!(await center(`.tg-header[data-group="empty-e2e"] .tg-add`)) && emptyText === 'Empty', emptyText);
 
 await rightClick(await center(emptyRow));
 s = await state();
-check('right-click on its empty row offers a subgroup', s.rows.some((r) => r.includes('New empty subgroup')), s.rows);
+check('right-click on its "Empty" row offers a subgroup', s.rows.some((r) => r.includes('New empty subgroup')), s.rows);
+await key('Escape');
+await rightClick(await center(`.tg-header[data-group="empty-e2e"] .tg-add`));
+s = await state();
+check('right-click on its + offers a subgroup', s.rows.some((r) => r.includes('New empty subgroup')), s.rows);
 await pickRow('New empty subgroup');
 const sub = (await groupsNow()).find((g) => g.parent === 'empty-e2e');
 check('"New empty subgroup" makes an empty subgroup', sub?.tabs === 0, await groupsNow());
@@ -218,6 +223,6 @@ s = await state();
 check('right-click on a tab opens no picker', !s.picker);
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

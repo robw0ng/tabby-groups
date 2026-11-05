@@ -340,6 +340,9 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
     .tabs { --tg-gap: 3px !important; }
     .tg-toolbar, .tg-search, .tg-presence, .tabs > tab-header > .buttons, .tg-tab-pin, .tabs > tab-header > .pin-indicator,
     .tg-header .tg-text, .tg-header .tg-add, .tg-header .tg-pin { display: none !important; }
+    /* An empty group keeps its + (it has no tab to add from otherwise), small and in place of the arrow, which would only fold "Empty". */
+    .tg-header.tg-of-empty .tg-add { display: block !important; margin-left: 0; width: 16px; height: 16px; line-height: 16px; font-size: 14px; }
+    .tg-header.tg-of-empty .tg-arrow { display: none !important; }
     .tab-bar > .tabs + .btn-group { grid-column: 1 / -1 !important; flex-wrap: wrap; justify-content: center; }
     .tab-bar > .btn-group { flex-wrap: wrap; justify-content: center; min-width: 0; }
     .tabs > tab-header { justify-content: center; padding-left: 0 !important; padding-right: 0 !important; min-width: 0 !important; }
