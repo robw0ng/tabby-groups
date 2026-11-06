@@ -1209,7 +1209,22 @@ function install (injector) {
     const origTabDropped = SplitTab?.prototype.onTabDropped
     if (origTabDropped) {
         SplitTab.prototype.onTabDropped = function (tab, zone) {
-            return windowsApi.droppedOutside(tab) ? undefined : origTabDropped.call(this, tab, zone)
+            return windowsApi.droppedOutside(tab) || cancelledDrop(tab) ? undefined : origTabDropped.call(this, tab, zone)
+        }
+    }
+    // Tabby's own tab-bar drop too: after Esc it must neither reorder nor tear a pane out of its split into a new tab.
+    // The template calls the root component's method, so a property on the instance stands in for it. Set at the first
+    // drag: the plugin installs before Tabby's root component exists.
+    let appRoot = null
+    function guardTabBarDrop () {
+        if (appRoot) {
+            return
+        }
+        const root = require('@angular/core').ɵgetLContext(document.querySelector('app-root'))?.lView?.[8]
+        const orig = root?.onTabsReordered
+        if (orig && !Object.hasOwn(root, 'onTabsReordered')) {
+            appRoot = root
+            root.onTabsReordered = event => cancelledDrop(event?.item?.data) ? undefined : orig.call(root, event)
         }
     }
 
@@ -1702,6 +1717,9 @@ function install (injector) {
     let draggedTab = null
     let draggedGroup = null
     let dropIntent = null
+    // Esc during a drag: { tab, live } while the drag lasts, then { tab, until } for Tabby's split drop, which can come later.
+    let dragCancel = null
+    const cancelledDrop = tab => !!dragCancel && dragCancel.tab === tab && (dragCancel.live || Date.now() < dragCancel.until)
     const dropLine = Object.assign(document.createElement('div'), { className: 'tg-drop-line' })
 
     /** The tab for a tab-header row; during a drag Tabby's placeholder stands in the dragged tab's place, so order holds. */
@@ -1723,8 +1741,11 @@ function install (injector) {
     // Where a drop would land: the middle of a tab groups with it, its edges insert next to it; a group header's lower
     // half is "first in the group" and its upper half "just above it"; a subgroup footer's halves are "last in it" and "just below it".
     function onDragMove (e) {
-        const row = rowAt(e.clientX, e.clientY)
         dropIntent = null
+        if (dragCancel?.live) {
+            return
+        }
+        const row = rowAt(e.clientX, e.clientY)
         const own = row && draggedGroup && (row.matches('tab-header') ? inGroup(tabOfRow(row), draggedGroup.name) : chainOf(row.dataset.group).includes(draggedGroup))
         if (row && !row.matches('.cdk-drag-placeholder') && !own) {
             const r = row.getBoundingClientRect()
@@ -1787,8 +1808,14 @@ function install (injector) {
         document.body.appendChild(dropLine)
     }
 
+    // Esc cancels the whole drag: no mark now, and on release the tab (or group) stays where it was.
     const onDragKey = e => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && (draggedTab || draggedPane || draggedGroup)) {
+            // Not to the terminal too: Esc there would interrupt what runs in it.
+            e.preventDefault()
+            e.stopPropagation()
+            // The object Tabby drags (a pane in rearrange mode), which its split drop is called with.
+            dragCancel = { tab: draggedTab ?? draggedPane?.pane ?? null, live: true }
             dropIntent = null
             showDropMark()
         }
@@ -1804,6 +1831,8 @@ function install (injector) {
         draggedPane = app.tabs.includes(tab) ? null : { pane: tab, from: top(tab) }
         draggedTab = draggedPane ? null : tab
         dropIntent = null
+        dragCancel = null
+        guardTabBarDrop()
         document.addEventListener('pointermove', onDragMove, true)
         document.addEventListener('keydown', onDragKey, true)
     }
@@ -1817,7 +1846,10 @@ function install (injector) {
         const i = dropIntent
         draggedTab = draggedPane = dropIntent = null
         showDropMark()
-        if (tab && i && moved && app.tabs.includes(tab) && i.tab !== tab) {
+        // Cancelled: no drop of ours, and Tabby's are blocked (cancelledDrop), so the tab stays where it was.
+        if (dragCancel?.live) {
+            dragCancel = { tab: dragCancel.tab, until: Date.now() + 3000 }
+        } else if (tab && i && moved && app.tabs.includes(tab) && i.tab !== tab) {
             applyDrop(tab, i)
         }
     }
@@ -1890,6 +1922,7 @@ function install (injector) {
                 }
                 draggedGroup = g
                 dropIntent = null
+                dragCancel = null
                 hideTip()
                 h.classList.add('tg-dragging')
                 ghost.textContent = g.name
@@ -1905,8 +1938,9 @@ function install (injector) {
             if (!draggedGroup) {
                 return
             }
-            const i = dropIntent
-            draggedGroup = dropIntent = null
+            // After Esc the intent stays empty (onDragMove sets none), so the group stays where it was.
+            const i = dragCancel?.live ? null : dropIntent
+            draggedGroup = dropIntent = dragCancel = null
             ghost.remove()
             h.classList.remove('tg-dragging')
             showDropMark()
@@ -2044,6 +2078,9 @@ function install (injector) {
         app.toggleTabPinned = origTogglePin
         if (origTabDropped) {
             SplitTab.prototype.onTabDropped = origTabDropped
+        }
+        if (appRoot) {
+            delete appRoot.onTabsReordered
         }
         if (origRemovePane && origUpdateTitle) {
             SplitTab.prototype.removeTab = origRemovePane

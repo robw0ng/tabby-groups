@@ -217,6 +217,41 @@ const items = await run(`() => [...document.querySelectorAll('.tg-menu .tg-item'
 check('a group with tabs offers no "Delete group"', items.length && !items.includes('Delete group'), items);
 await key('Escape');
 
+// Esc during a drag cancels it: on release, the tab order, groups and window count are as before.
+const layout = async () => JSON.stringify({ tabs: (await state()).tabs, groups: await groupsNow(), windows: ((await tabbyPages(port)) ?? []).length });
+const escDrag = async (from, to) => {
+  await mouse('mousePressed', from, 1);
+  for (let k = 1; k <= 20; k++) {
+    await mouse('mouseMoved', { x: from.x + (to.x - from.x) * k / 20, y: from.y + (to.y - from.y) * k / 20 }, 1);
+    await sleep(25);
+  }
+  await sleep(300);
+  await key('Escape');
+  await mouse('mouseMoved', to, 1);
+  await mouse('mouseReleased', to, 0);
+  await sleep(2500);
+};
+const rowCenter = (i) => run(`(i) => { const r = document.querySelectorAll('.tab-bar .tabs > tab-header')[i].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }`, i);
+let was = await layout();
+await escDrag(await rowCenter(0), await rowCenter(2));
+check('Esc during a tab drag onto another tab: nothing moves or groups', (await layout()) === was && !(await run(`() => !!document.querySelector('.tg-drop-line, .tg-drop-onto')`)), JSON.parse(await layout()));
+was = await layout();
+p = await points();
+await escDrag(await center('.tg-header[data-group="outer"]'), p.free);
+check('Esc during a group header drag: the group stays', (await layout()) === was, JSON.parse(await layout()));
+// Onto the terminal (Tabby's split zones): no split. The pane counts show one.
+const panes = () => run(`() => ${APP}.tabs.map(t => t.getAllTabs?.().length ?? 1).join(',')`);
+was = await layout() + await panes();
+await escDrag(await rowCenter(0), await center('.content-tab-active'));
+check('Esc during a tab drag onto the terminal: no split', (await layout()) + (await panes()) === was, await panes());
+// Out of the window: the page must see the pointer outside, or the check proves nothing.
+await run(`() => { window.__tgSawOutside = false; document.addEventListener('pointermove', e => { if (e.clientX < 0) window.__tgSawOutside = true }, true) }`);
+was = await layout();
+const r0 = await rowCenter(0);
+await escDrag(r0, { x: -60, y: r0.y });
+const sawOutside = await run(`() => window.__tgSawOutside`);
+check('Esc during a drag out of the window: no move and no new window', sawOutside && (await layout()) === was, { sawOutside, layout: JSON.parse(await layout()) });
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
