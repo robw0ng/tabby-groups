@@ -7,10 +7,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+// A hook left running holds the session ("running stop hooks"), and a stdin that never closes would keep it: it ends
+// within 3 s whatever happens, and reads only until its JSON is whole.
+setTimeout(() => process.exit(0), 3000);
+// Decoded as a stream, so a character split between two chunks stays whole.
+process.stdin.setEncoding('utf8');
 let input = '';
-for await (const chunk of process.stdin) input += chunk;
 let hook;
-try { hook = JSON.parse(input); } catch { process.exit(0); }
+for await (const chunk of process.stdin) {
+  input += chunk;
+  try { hook = JSON.parse(input); break; } catch { }
+}
+if (!hook) process.exit(0);
 const id = hook.session_id;
 if (!/^[0-9a-f-]{36}$/i.test(id ?? '')) process.exit(0);
 
@@ -73,3 +81,4 @@ try {
   }
 } catch { }
 // A hook never blocks Claude: no output, exit 0.
+process.exit(0);

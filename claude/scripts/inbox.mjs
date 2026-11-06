@@ -6,10 +6,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+// A hook left running holds the session ("running stop hooks"), and a stdin that never closes would keep it: it ends
+// within 3 s whatever happens, and reads only until its JSON is whole.
+setTimeout(() => process.exit(0), 3000);
+// Decoded as a stream, so a character split between two chunks stays whole.
+process.stdin.setEncoding('utf8');
 let input = '';
-for await (const chunk of process.stdin) input += chunk;
 let hook;
-try { hook = JSON.parse(input); } catch { process.exit(0); }
+for await (const chunk of process.stdin) {
+  input += chunk;
+  try { hook = JSON.parse(input); break; } catch { }
+}
+if (!hook) process.exit(0);
 const id = hook.session_id;
 const event = hook.hook_event_name;
 if (!/^[0-9a-f-]{36}$/i.test(id ?? '') || !['PostToolUse', 'UserPromptSubmit'].includes(event)) process.exit(0);
@@ -32,6 +40,9 @@ if (messages.length) {
   // emoji is a box in many terminal fonts), and without the reply command, which is for Claude.
   const shown = m => m.replace(/ \(reply: node tab-say\.mjs [^]*\)$/, '');
   const systemMessage = messages.map(shown).map(m => 'inbox · ' + (m.length > 600 ? m.slice(0, 600) + '…' : m)).join('\n');
-  console.log(JSON.stringify({ systemMessage, hookSpecificOutput: { hookEventName: event, additionalContext } }));
+  // Exits once the output is written: a pipe write can still be pending at process.exit.
+  process.stdout.write(JSON.stringify({ systemMessage, hookSpecificOutput: { hookEventName: event, additionalContext } }) + '\n', () => process.exit(0));
+} else {
+  // A hook never blocks Claude: exit 0 either way.
+  process.exit(0);
 }
-// A hook never blocks Claude: exit 0 either way.

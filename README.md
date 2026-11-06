@@ -97,6 +97,12 @@ node claude/scripts/inbox.test.mjs
 Check the inbox: a message for a Claude tab is queued, never typed over a draft or a question, and an idle Claude gets one nudge per new message; the hook hands each message over once.
 
 ```sh
+node claude/scripts/hooks-exit.test.mjs
+```
+
+Checks that every Claude Code hook ends by itself while its stdin stays open: within 3 s with nothing sent, at once with its whole input. A hook left running holds its session on "running stop hooks".
+
+```sh
 node test-picker.js
 node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
 ```
