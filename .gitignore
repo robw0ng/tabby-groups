@@ -1,0 +1,6 @@
+node_modules/
+# share/pack.mjs output and the share workflow's work folders
+out/
+planted/
+unzipped/
+*.zip

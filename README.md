@@ -6,6 +6,8 @@ It runs on Windows. macOS support is built in but untested on a real Mac.
 
 It works when Tabby's tabs are on the left or the right. With tabs on the top or the bottom, Tabby looks as usual and the groups wait until the tabs are back on the side.
 
+<!-- Screenshot: the side bar with nested groups, session icons and the new-tab picker (docs/side-bar.png). -->
+
 ## What you get
 
 | Feature | Detail |
@@ -16,7 +18,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | Drag and drop | Drop a tab on another tab to make a group, as on an iPhone. Drop on an edge to reorder. Drag a group header to move the whole group. |
 | Rename | Double-click a group name or a tab title to rename it in place |
 | New tab | Double-click empty space, or click a group's +, to open a tab in that group |
-| New-tab picker | Right-click empty space: a small "+ New tab" menu, each row with its icon, with Tabby's default profile, then your pinned entries, then a Files tab (with [tabby-files](https://github.com/robw0ng/tabby-files)) and New empty group. Other profiles show only when pinned. Type to filter (the filter box shows once you type), ↑/↓ and Enter, Esc or a click outside closes. The tab lands in the group whose space you clicked, else at the end outside every group. Pin a profile in Settings → Tab groups → New-tab picker, or in `tabby-groups.json`: `"picker": [{ "profile"? (a profile name or id) \| "command"?, "label"?, "icon"? (an emoji or Font Awesome classes such as `fas fa-robot`; default: the profile's icon), "cwd"? }]`, e.g. `{ "profile": "WSL" }` or `{ "label": "Claude in C:\\webapp", "command": "claude", "cwd": "C:\\webapp" }`. A `command` is typed into the default shell. |
+| New-tab picker | Right-click empty space: a small "+ New tab" menu, each row with its icon, with Tabby's default profile, then your pinned entries, then a Files tab (with a Files-tab plugin, tabby-files, not published yet) and New empty group. Other profiles show only when pinned. Type to filter (the filter box shows once you type), ↑/↓ and Enter, Esc or a click outside closes. The tab lands in the group whose space you clicked, else at the end outside every group. Pin a profile in Settings → Tab groups → New-tab picker, or in `tabby-groups.json`: `"picker": [{ "profile"? (a profile name or id) \| "command"?, "label"?, "icon"? (an emoji or Font Awesome classes such as `fas fa-robot`; default: the profile's icon), "cwd"? }]`, e.g. `{ "profile": "WSL" }` or `{ "label": "Claude in my app", "command": "claude", "cwd": "C:\\projects\\app" }`. A `command` is typed into the default shell. |
 | Session icons | Claude Code, Codex, Gemini, Node, Python, Docker, Vim, SSH, PowerShell, cmd, Bash, WSL and more |
 | Your own icons | `tabby-groups.json` in Tabby's settings folder: `{ "icons": [{ "name", "title"?, "process"?, "color"?, "emoji" \| "path" \| "paths", "stroke"? }] }`. `title` and `process` are patterns for the tab title and a command line under the tab. Edits apply at once. |
 | Your own buttons | `"buttons": [{ "label", "command", "cwd"?, "icon"? (Font Awesome name) \| "emoji" \| "path" \| "paths", "check"?, "checkEveryMinutes"? }]` in the same file. A button sits before Tabby's own toolbar buttons; a click types `command` into a new tab that stays open. With `check`, the button is an update: it shows (green, with a dot) only while the check exits 10 (run at start and every `checkEveryMinutes`, default 30); its tooltip says "Update available" and lists the check's output, and ✕ hides it until that output changes. With `"alwaysShow": true` it stays in the bar when there is nothing new too (plain, tooltip "nothing new"), so a click can force the update any time. A click runs `command` in the background (the icon spins), saves the output to a log, and shows a toast: "up to date ✓", the `problems`, or the `reload` plugins from a JSON object on the command's last line, with "Open log". On macOS, commands and checks run in the user's login shell. |
@@ -57,7 +59,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 
 ## Scripting
 
-Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window. The Claude Code plugin's `scripts/tabby-eval.mjs` runs a JavaScript file inside Tabby through its DevTools port and prints the result as JSON, with no shell quoting (`node scripts/tabby-eval.test.mjs --port <test Tabby port>` checks it). The functions:
+Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window. The Claude Code plugin's `scripts/tabby-eval.mjs` runs a JavaScript file inside Tabby through its DevTools port and prints the result as JSON, with no shell quoting (`node claude/scripts/tabby-eval.test.mjs --port <test Tabby port>` checks it). The functions:
 
 | Function | Does |
 | --- | --- |
@@ -81,7 +83,28 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 After you write a file for another session, wake it: node <tabby-groups>/claude/scripts/tab-say.mjs "<its tab title>" "read <file>"
 ```
 
+## Architecture
+
+Plain JavaScript with no build step and no dependencies: Tabby loads `index.js`, which loads the rest; the `"files"` list in `package.json` is what gets installed.
+
+| File | Does |
+| --- | --- |
+| `index.js` | Installs into Tabby: the groups, the side-bar rows, drag and drop, the menus, the restore after a restart, and the `window.__tabbyGroups` API |
+| `windows.js` | Moves a tab to another Tabby window with its shell still running |
+| `agent.js`, `inbox.js` | A Claude tab's state (busy, asking, compacting) and its message inbox, from the tab title and the files the Claude Code hooks write |
+| `processes.js`, `resume.js` | What runs in a tab and in which folder; the command that resumes a Claude Code or Codex session |
+| `picker.js`, `buttons.js`, `settings.js` | The new-tab picker, the user's toolbar buttons, the settings page |
+| `styles.js`, `icons.js`, `tooltip.js` | The look |
+| `claude/` | The Claude Code plugin: the `tabby` skill, its scripts and the hooks |
+| `share/` | Packs the Tabby plugin alone as a zip, with a leak check (`share/leak-check.mjs`, run by `.github/workflows/share.yml`) |
+
 ## Test
+
+```sh
+npm test
+```
+
+Runs every unit test; none needs Tabby. The tests that take `--port` (`claude/scripts/picker.e2e.mjs`, `claude/scripts/tabby-eval.test.mjs`) need a running test Tabby, never your own.
 
 ```sh
 node test-resume.js
@@ -108,3 +131,7 @@ node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
 ```
 
 Check the new-tab picker (its rows, the filter and where the new tab lands), empty groups, and Esc cancelling a drag; the e2e right-clicks and drags in a test Tabby (it closes that window's tabs).
+
+## Licence
+
+No licence yet: all rights reserved.

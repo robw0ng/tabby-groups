@@ -1,6 +1,6 @@
 name: share
 
-# Builds tabby-groups-<package.json version>.zip for a coworker: INSTALL.md (for an agent), README.md and the Tabby plugin
+# Builds tabby-groups-<package.json version>.zip, the Tabby plugin on its own: INSTALL.md (for an agent), README.md and the Tabby plugin
 # only, checked for personal content. A manual run keeps the zip as a run artifact; a v* tag attaches it to that tag's release.
 on:
   push:

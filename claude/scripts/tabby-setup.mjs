@@ -8,7 +8,7 @@ const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const port = opt('port', '9222');
 const dryRun = args.includes('--dry-run');
-const only = opt('only', null);   // 'shell-integration': skip the config settings (claude-toolbelt's sync uses this)
+const only = opt('only', null);   // 'shell-integration': skip the config settings (for a sync script)
 
 const MANUAL = `Tabby is not running with --remote-debugging-port=${port}. Set these by hand in Tabby's Settings:
   - Window → Tabs → Tabs location: Left (or Right)

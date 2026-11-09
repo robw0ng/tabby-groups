@@ -3,8 +3,13 @@
   "version": "0.1.18",
   "description": "Tab groups, session icons and search for Tabby's side tab bar",
   "keywords": [
-    "tabby-plugin"
+    "tabby-plugin",
+    "tabby",
+    "tab-groups"
   ],
+  "scripts": {
+    "test": "node test-resume.js && node test-inbox.js && node test-picker.js && node claude/scripts/asking.test.mjs && node claude/scripts/compacting.test.mjs && node claude/scripts/inbox.test.mjs && node claude/scripts/hooks-exit.test.mjs"
+  },
   "author": "robw0ng",
   "license": "UNLICENSED",
   "repository": {

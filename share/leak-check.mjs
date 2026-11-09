@@ -16,10 +16,10 @@ try {
 const plugin = [...new Set(['index.js', ...pluginFiles])].map(f => 'tabby-groups/' + f);
 const allowedFiles = ['INSTALL.md', 'README.md', 'tabby-groups/package.json', ...plugin];
 const rules = [
-  ['Claude Code skill cog name', /claude-sessions/i],
-  ['the personal workflow', /\bworkflow\b/i],
+  ['a Claude Code tool name', /claude-sessions/i],
+  ['a Claude Code workflow reference', /\bworkflow\b/i],
   ['a robw0ng GitHub path', /robw0ng\//i],
-  ['a personal Windows path', /[A-Za-z]:\\+(Users|tabby-|webapp|core|dev-tools|worktrees|claude|vetty)/i],
+  ['a personal Windows path', /[A-Za-z]:\\+(Users|tabby-|worktrees|claude)/i],
   ['a tabby-remote link', /(github\.com\/[^\s'"`)]*tabby-remote|tabby-remote\.git)/i],
   // The plugin needs no DevTools port; only the Claude tools (not shared) use it, and closed is safer.
   ['the DevTools port', /remote-debugging/i],

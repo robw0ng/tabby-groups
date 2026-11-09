@@ -1,4 +1,4 @@
-// node share/pack.mjs <out folder>: lays out the coworker share — INSTALL.md (for an agent), README.md (for the person)
+// node share/pack.mjs <out folder>: lays out the share zip's content — INSTALL.md (for an agent), README.md (for the person)
 // and tabby-groups/ (the Tabby plugin only). package.json keeps only what Tabby needs: no repository link.
 import fs from 'node:fs';
 import path from 'node:path';

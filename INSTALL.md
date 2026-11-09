@@ -13,7 +13,7 @@ The repo has two parts:
 
 ## Needs
 
-Tabby 1.0, Node 22 or later, git, and Claude Code. The repo is private: `gh auth status` must show an account with access.
+Tabby 1.0, Node 22 or later, git, and Claude Code.
 
 ## 1. Get the repo
 
@@ -141,7 +141,7 @@ node "$plugin/scripts/tabby.mjs" list
 | JSON list without `"plugin":true` | Tabby runs without the plugin: check step 3, then restart Tabby |
 | Exit code 2, "no DevTools port" | Tabby was not started with the flag: step 4 |
 
-The Tabby side has its own check: `node "$repo/test-resume.js"` prints `all … passed`.
+The unit tests have their own check: `npm test` in `$repo` ends with `all passed`.
 
 ## What differs on macOS
 

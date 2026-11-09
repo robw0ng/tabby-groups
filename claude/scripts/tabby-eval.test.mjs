@@ -25,8 +25,8 @@ const cases = [
     r => r.code === 0 && r.out === '{"tabs":true,"plugin":"function"}'],
   ['passes --args', run('return args.n * 21', ['--port', port, '--args', argsFile]), r => r.code === 0 && r.out === '42'],
   // The file is JavaScript, so it writes a backslash as \\ like any source file; the transport must not change it.
-  ['keeps backslashes and quotes', run(String.raw`return 'C:\\core "q" ' + "it's"`, ['--port', port]),
-    r => r.code === 0 && JSON.parse(r.out) === String.raw`C:\core "q" it's`],
+  ['keeps backslashes and quotes', run(String.raw`return 'C:\\code "q" ' + "it's"`, ['--port', port]),
+    r => r.code === 0 && JSON.parse(r.out) === String.raw`C:\code "q" it's`],
   ['awaits promises', run('await new Promise(r => setTimeout(r, 50)); return injector.get(core.ConfigService) ? "ok" : "no"', ['--port', port]),
     r => r.code === 0 && r.out === '"ok"'],
   ['reads stdin', run('return 7', ['--port', port], true), r => r.code === 0 && r.out === '7'],

@@ -11,8 +11,8 @@ const profiles = [pwsh, cmd, wsl, { id: 'ssh:t', name: 'SSH connection', isTempl
 const pinned = [
     { profile: 'WSL' },
     { profile: 'local:cmd', label: 'Command Prompt' },
-    { label: 'Claude in C:\\webapp', icon: '✳', command: 'claude', cwd: 'C:\\webapp' },
-    { label: 'pwsh in core', profile: 'PowerShell', cwd: 'C:\\core' },
+    { label: 'Claude in C:\\projects\\app', icon: '✳', command: 'claude', cwd: 'C:\\projects\\app' },
+    { label: 'pwsh in code', profile: 'PowerShell', cwd: 'C:\\code' },
     // The default profile pinned with no folder is already on top; an unknown profile, a template, no action: left out.
     { profile: 'PowerShell' },
     { label: 'gone', profile: 'No such profile' },
@@ -26,16 +26,16 @@ assert.deepStrictEqual(rows.map(r => `${r.block} ${r.label}`), [
     '0 PowerShell',
     '1 WSL',
     '1 Command Prompt',
-    '1 Claude in C:\\webapp',
-    '1 pwsh in core',
+    '1 Claude in C:\\projects\\app',
+    '1 pwsh in code',
     '2 Files tab',
     '2 New empty group',
 ])
 assert.deepStrictEqual(rows[0].spec, { profile: pwsh })
 assert.deepStrictEqual(rows[1].spec, { profile: wsl, cwd: undefined })
 assert.deepStrictEqual(rows[2].spec, { profile: cmd, cwd: undefined })
-assert.deepStrictEqual(rows[3].spec, { run: 'claude', cwd: 'C:\\webapp' })
-assert.deepStrictEqual(rows[4].spec, { profile: pwsh, cwd: 'C:\\core' })
+assert.deepStrictEqual(rows[3].spec, { run: 'claude', cwd: 'C:\\projects\\app' })
+assert.deepStrictEqual(rows[4].spec, { profile: pwsh, cwd: 'C:\\code' })
 assert.deepStrictEqual(rows[5].spec, { files: true })
 assert.deepStrictEqual(rows[6].spec, { newGroup: true })
 
@@ -62,12 +62,12 @@ assert.deepStrictEqual(pickerItems({ defaultProfile: pwsh, profiles }).map(r => 
 assert.strictEqual(pickerItems({ defaultProfile: pwsh, profiles, group: 'api' }).at(-1).label, 'New empty subgroup')
 
 // Filter: every word, any case, in the label.
-assert.deepStrictEqual(filterItems(rows, 'claude WEB').map(r => r.label), ['Claude in C:\\webapp'])
+assert.deepStrictEqual(filterItems(rows, 'claude APP').map(r => r.label), ['Claude in C:\\projects\\app'])
 assert.strictEqual(filterItems(rows, '  ').length, rows.length)
 assert.deepStrictEqual(filterItems(rows, 'zzz'), [])
 
 // The settings switch: on adds a pin by id; off removes the profile's bare pins (by name or id) and keeps a richer entry.
-const rich = { profile: 'WSL', cwd: 'C:\\core' }
+const rich = { profile: 'WSL', cwd: 'C:\\code' }
 const settings = { autoResume: true, picker: [{ command: 'claude', label: 'c' }, { profile: 'local:wsl' }, { profile: 'WSL' }, rich] }
 assert.deepStrictEqual(setPin(settings, cmd, true).picker, [...settings.picker, { profile: 'local:cmd' }])
 assert.deepStrictEqual(setPin(settings, wsl, false), { autoResume: true, picker: [{ command: 'claude', label: 'c' }, rich] })
