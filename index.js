@@ -1854,6 +1854,31 @@ function install (injector) {
         }
     }
 
+    /**
+     * Files `newTab` (a tab, or a pane of one) with `fromTab`: in its group and parent, right after it; at the top level
+     * when it has none. For a tab another plugin opens from one (a Files tab from a shell). Returns false when either is gone, or both are one tab.
+     */
+    function placeAfter (newTab, fromTab) {
+        const tab = newTab && top(newTab)
+        const from = fromTab && top(fromTab)
+        if (!tab || !from || tab === from || !app.tabs.includes(tab) || !app.tabs.includes(from)) {
+            return false
+        }
+        const group = from.__tg ?? null
+        // Pins first: Tabby clamps a move to the pinned or unpinned part of the list, and normalize puts a group's own
+        // pinned tabs first. In a group the tab takes the group's Tabby pin and fromTab's pin inside it; at the top level
+        // it keeps its own (a Tabby pin would stop Ctrl+W closing it), so after a pinned fromTab it lands after the pins.
+        setMembership(tab, group)
+        if (group) {
+            tab.pinned = !!chainOf(group)[0]?.pinned
+            from.__tgPinned ? tab.__tgPinned = true : delete tab.__tgPinned
+            chainOf(group).forEach(g => { g.collapsed = false })
+        }
+        placeTab(tab, from, true)
+        changed()
+        return true
+    }
+
     function placeTab (tab, anchor, after) {
         if (!anchor || anchor === tab) {
             return
@@ -2249,7 +2274,7 @@ function install (injector) {
     window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
         // For tabby-remote's talk between computers; its presence also says this copy refuses non-Claude tabs there.
         sayToClaude: (name, text) => say(name, text, { claudeOnly: true }), tabOf,
-        deleteGroup, move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
+        deleteGroup, placeAfter, move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
         renderSettings: host => userIconsFile && renderSettings(host, userIconsFile, injector.get(core.ProfilesService).getProfiles()) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
     if (window.__tgAfterReload) {

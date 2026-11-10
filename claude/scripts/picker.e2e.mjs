@@ -217,6 +217,26 @@ const items = await run(`() => [...document.querySelectorAll('.tg-menu .tg-item'
 check('a group with tabs offers no "Delete group"', items.length && !items.includes('Delete group'), items);
 await key('Escape');
 
+// placeAfter: a tab opened from another lands right after it, in its group; from a loose tab, right after it at the top level.
+const placed = await run(`async () => {
+  const app = ${APP};
+  const tg = window.__tabbyGroups;
+  const byTitle = t => app.tabs.find(x => (x.customTitle || x.title) === t);
+  const where = (title, from) => {
+    const tab = byTitle(title);
+    return { group: tab.__tg ?? null, right: app.tabs.indexOf(tab) === app.tabs.indexOf(byTitle(from)) + 1 };
+  };
+  await tg.open({ title: 'after-o1' });
+  const out = { inGroup: { ok: tg.placeAfter(byTitle('after-o1'), byTitle('o1')), ...where('after-o1', 'o1') } };
+  // The same tab, now in a group, placed after the loose tab: it leaves the group and moves.
+  out.toTop = { ok: tg.placeAfter(byTitle('after-o1'), byTitle('loose')), ...where('after-o1', 'loose') };
+  out.gone = tg.placeAfter(byTitle('after-o1'), {});
+  return out;
+}`);
+check('placeAfter: in the source tab\'s group, right after it', placed.inGroup.ok && placed.inGroup.group === 'outer' && placed.inGroup.right, placed);
+check('placeAfter: after a loose tab, it leaves its group and lands right after it', placed.toTop.ok && placed.toTop.group === null && placed.toTop.right, placed);
+check('placeAfter: a source tab not open does nothing', placed.gone === false, placed);
+
 // Esc during a drag cancels it: on release, the tab order, groups and window count are as before.
 const layout = async () => JSON.stringify({ tabs: (await state()).tabs, groups: await groupsNow(), windows: ((await tabbyPages(port)) ?? []).length });
 const escDrag = async (from, to) => {

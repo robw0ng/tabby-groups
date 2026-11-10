@@ -65,6 +65,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `addTab(tab, group, { color, parent })` / `removeTab(tab)` | Puts a tab in a group, or takes it out |
 | `setCollapsed`, `setColor`, `setPinned`, `setParent`, `rename`, `ungroup` | Change a group |
 | `deleteGroup(name)` | Deletes an empty group and its (empty) subgroups. Returns false for a group with a tab under it. |
+| `placeAfter(newTab, fromTab)` | For a tab opened from another tab (a Files tab from a shell): files `newTab` in `fromTab`'s group and moves it right after `fromTab`; at the top level when `fromTab` has no group (after Tabby's pinned tabs, if `fromTab` is one; the new tab is not pinned). Either can be a pane of a split tab. Returns false when either tab is not open, or both are the same tab. |
 | `setTabPinned(tab, pinned)` | Pins a tab inside its group |
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
 | `list()` | All groups, with their tabs and Claude Code counts |
