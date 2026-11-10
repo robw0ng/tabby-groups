@@ -6,8 +6,6 @@ It runs on Windows. macOS support is built in but untested on a real Mac.
 
 It works when Tabby's tabs are on the left or the right. With tabs on the top or the bottom, Tabby looks as usual and the groups wait until the tabs are back on the side.
 
-<!-- Screenshot: the side bar with nested groups, session icons and the new-tab picker (docs/side-bar.png). -->
-
 ## What you get
 
 | Feature | Detail |
@@ -134,4 +132,4 @@ Check the new-tab picker (its rows, the filter and where the new tab lands), emp
 
 ## Licence
 
-No licence yet: all rights reserved.
+MIT. See [LICENSE](LICENSE).
