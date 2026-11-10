@@ -272,12 +272,66 @@ await escDrag(r0, { x: -60, y: r0.y });
 const sawOutside = await run(`() => window.__tgSawOutside`);
 check('Esc during a drag out of the window: no move and no new window', sawOutside && (await layout()) === was, { sawOutside, layout: JSON.parse(await layout()) });
 
+// Empty groups keep their place: one emptied between two tabs stays there; a new one shows where it was made.
+const follows = (a, b) => run(`([a, b]) => !!(document.querySelector(a)?.compareDocumentPosition(document.querySelector(b)) & Node.DOCUMENT_POSITION_FOLLOWING)`, [a, b]);
+const tabRow = (title) => run(`(title) => { const app = ${APP}; const i = app.tabs.findIndex(t => (t.customTitle || t.title) === title); document.querySelectorAll('.tab-bar .tabs > tab-header')[i]?.setAttribute('data-e2e', title) }`, title);
+await run(`async () => { const tg = window.__tabbyGroups; await tg.open({ title: 'm1', group: 'mid' }); await tg.open({ title: 'tail' }) }`);
+await sleep(2500);
+await run(`async () => { const app = ${APP}; await app.closeTab(app.tabs.find(t => (t.customTitle || t.title) === 'm1'), false, true) }`);
+await sleep(800);
+await tabRow('tail');
+check('a group emptied by closing its last tab stays where it was, above the tab after it', await follows('.tg-header[data-group="mid"]', 'tab-header[data-e2e="tail"]'), await groupsNow());
+const midStored = await run(`() => JSON.parse(localStorage.getItem('tabby-groups:empty-groups') ?? '[]').find(g => g.name === 'mid')`);
+check('its place is stored for a restart', typeof midStored?.slot === 'number', midStored);
+// A right-click in outer's side band beside inner's tab: the new subgroup of outer goes right after inner.
+const band = await run(`() => { const app = ${APP}; const list = document.querySelector('.tab-bar .tabs'); const row = document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.findIndex(t => t.__tg === 'inner')]; const r = row.getBoundingClientRect(); const y = r.top + r.height / 2; for (let x = list.getBoundingClientRect().left + 1; x < r.left + r.width / 2; x++) { if (document.elementFromPoint(x, y) === list) return { x, y } } return null }`);
+const before2 = new Set((await groupsNow()).map((g) => g.name));
+if (band) {
+  await rightClick(band);
+  await pickRow('New empty subgroup');
+  await key('Escape');
+}
+const spot = (await groupsNow()).find((g) => !before2.has(g.name));
+check('a new empty subgroup made by a right-click in a band shows right after the unit above the click', spot?.parent === 'outer'
+  && await run(`(n) => document.querySelector('.tg-header[data-group="' + n + '"]')?.previousElementSibling?.matches('.tg-foot[data-group="inner"]')`, spot.name), { band, spot });
+const order = await run(`() => window.__tabbyGroups.list().filter(g => g.parent === 'outer').map(g => g.name)`);
+check('list() keeps the side-bar order', order.indexOf(spot?.name) === order.indexOf('inner') + 1, order);
+
+// Close group: closes the tabs (subgroups too) through Tabby's close, then removes the groups. No question when nothing is busy or pinned.
+const asked = () => run(`() => window.__tgAsked`);
+const answer = (response) => run(`(response) => { const core = require('tabby-core'); const p = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9].get(core.PlatformService); window.__tgAsked = null; p.__tgReal ??= p.showMessageBox; p.showMessageBox = async (o) => { window.__tgAsked = o.message; return { response } } }`, response);
+await answer(1);
+await run(`async () => { const tg = window.__tabbyGroups; await tg.open({ title: 'c1', group: 'closeme' }); await tg.open({ title: 'c2', group: 'closeme' }); await tg.open({ title: 'c3', group: 'closesub', parent: 'closeme' }) }`);
+await sleep(2500);
+// Tabby keeps the last 5 closed tabs, so the check is that the newest 3 are new, not that the stack grew.
+await run(`() => { window.__tgStack0 = [...${APP}.closedTabsStack] }`);
+await rightClick(await center('.tg-header[data-group="closeme"]'));
+const closeItem = await run(`() => { const i = [...document.querySelectorAll('.tg-menu .tg-item')].find(e => e.textContent === 'Close group'); i?.click(); return !!i }`);
+await sleep(2000);
+s = await state();
+let left2 = (await groupsNow()).map((g) => g.name);
+check('"Close group" in the header menu closes its tabs and subgroups, with no question', closeItem && !(await asked())
+  && !s.tabs.some((t) => ['c1', 'c2', 'c3'].includes(t.title)) && !left2.includes('closeme') && !left2.includes('closesub'), { s, left2 });
+check('each closed tab can be reopened ("Reopen closed tab")', await run(`() => { const s = ${APP}.closedTabsStack; return s.length >= 3 && s.slice(-3).every(t => !window.__tgStack0.includes(t)) }`));
+// A pinned tab and a running command: it asks first; Cancel keeps everything, Close closes all.
+await run(`async () => { const app = ${APP}; const tg = window.__tabbyGroups; await tg.open({ title: 'p1', group: 'askme' }); await tg.open({ title: 'r1', group: 'askme', run: process.platform === 'win32' ? 'ping -n 60 127.0.0.1' : 'sleep 60' }); tg.setTabPinned(app.tabs.find(t => (t.customTitle || t.title) === 'p1'), true) }`);
+await sleep(4000);
+const cancelled = await run(`() => window.__tabbyGroups.closeGroup('askme')`);
+check('closeGroup asks when a tab is busy or pinned, and Cancel keeps the group', cancelled === false && /^Close 2 tabs in askme? [12] (is|are) busy, 1 is pinned.$/.test(await asked() ?? '')
+  && (await groupsNow()).some((g) => g.name === 'askme' && g.tabs === 2), await asked());
+await answer(0);
+const closed = await run(`() => window.__tabbyGroups.closeGroup('askme')`);
+await sleep(1500);
+check('Close closes the pinned and the busy tab too', closed === true && !(await groupsNow()).some((g) => g.name === 'askme') && !(await state()).tabs.some((t) => ['p1', 'r1'].includes(t.title)), await state());
+await run(`() => { const core = require('tabby-core'); const p = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9].get(core.PlatformService); p.showMessageBox = p.__tgReal; delete p.__tgReal }`);
+p = await points();
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
 check('right-click on a tab opens no picker', !s.picker);
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; an empty group made now comes back after a Tabby restart; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

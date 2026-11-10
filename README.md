@@ -11,7 +11,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | Feature | Detail |
 | --- | --- |
 | Groups | Name, colour, collapse, pin. Groups go inside groups, with no depth limit, drawn as nested panels. |
-| Empty groups | A group stays when its last tab moves out or closes, until you delete it (right-click its header > Delete group, offered only while it is empty). It shows as its header and a slim, muted "Empty" row: at the end of its parent's panel, or at the end of the list. Add a tab with the header's + (a click opens the default tab, a right-click the picker; it stays visible in a narrow side bar too), or drag a tab onto the "Empty" row. The main window keeps its empty groups through a restart (in its localStorage); another window's end with that window, as its tabs do. The phone side bar (tabby-remote) does not show empty groups. |
+| Empty groups | A group stays when its last tab moves out or closes, until you delete it (right-click its header > Delete group, offered only while it is empty). It shows as its header and a slim, muted "Empty" row, and keeps its place: an emptied group stays where it was, and a new one shows where you made it (at the right-click spot, or at the end of the group whose + you used). Add a tab with the header's + (a click opens the default tab, a right-click the picker; it stays visible in a narrow side bar too), or drag a tab onto the "Empty" row. The main window keeps its empty groups through a restart (in its localStorage); another window's end with that window, as its tabs do. The phone side bar (tabby-remote) does not show empty groups. |
 | Collapse | A collapsed group still shows the tab you are in, until you select another tab |
 | Drag and drop | Drop a tab on another tab to make a group, as on an iPhone. Drop on an edge to reorder. Drag a group header to move the whole group. |
 | Rename | Double-click a group name or a tab title to rename it in place |
@@ -43,8 +43,9 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | To | Do |
 | --- | --- |
 | Make a group | Drop a tab on another tab, or right-click a tab > Add to group > New group |
-| Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup, delete (when empty) |
+| Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup, close, delete (when empty) |
 | Make an empty group | Right-click empty space > New empty group; in a group's space, New empty subgroup. Type its name, then Enter. |
+| Close a group | Right-click its header > Close group: closes every tab in it and its subgroups (pinned ones too), then removes the groups. It asks first when a tab is busy or pinned. Reopen closed tab brings the tabs back one by one; Tabby keeps the last 5. |
 | Collapse or expand | Click the group header |
 | Leave a group | Right-click the tab > Remove from group |
 | Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along (when it was the group's last tab, the group also stays behind, empty). If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
@@ -65,10 +66,11 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `addTab(tab, group, { color, parent })` / `removeTab(tab)` | Puts a tab in a group, or takes it out |
 | `setCollapsed`, `setColor`, `setPinned`, `setParent`, `rename`, `ungroup` | Change a group |
 | `deleteGroup(name)` | Deletes an empty group and its (empty) subgroups. Returns false for a group with a tab under it. |
+| `closeGroup(name)` | Closes every tab in a group and its subgroups through Tabby's close, then removes the groups; asks first when a tab is busy or pinned. Resolves false when cancelled or when a tab stayed open. |
 | `placeAfter(newTab, fromTab)` | For a tab opened from another tab (a Files tab from a shell): files `newTab` in `fromTab`'s group and moves it right after `fromTab`; at the top level when `fromTab` has no group (after Tabby's pinned tabs, if `fromTab` is one; the new tab is not pinned). Either can be a pane of a split tab. Returns false when either tab is not open, or both are the same tab. |
 | `setTabPinned(tab, pinned)` | Pins a tab inside its group |
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
-| `list()` | All groups, with their tabs and Claude Code counts |
+| `list()` | All groups in side-bar order, with their tabs and Claude Code counts |
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
 | `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the one tab `name` names (as `say`: a title, else a part of one, or `#<n>`), as plain text. Read-only. Null when none or several match, or for a restored tab that was not opened yet. CLI: `claude/scripts/tab-read.mjs`. |
 | `say(name, text, { caller })` | Types `text` into the one tab titled `name` (else the one whose title contains it) and presses Enter, without focusing it. Refuses no match, more than one match, a tab not opened yet, and the tab with the `caller` pid under its shell. Returns `{ ok, why }`. |
@@ -92,6 +94,7 @@ Plain JavaScript with no build step and no dependencies: Tabby loads `index.js`,
 | `windows.js` | Moves a tab to another Tabby window with its shell still running |
 | `agent.js`, `inbox.js` | A Claude tab's state (busy, asking, compacting) and its message inbox, from the tab title and the files the Claude Code hooks write |
 | `processes.js`, `resume.js` | What runs in a tab and in which folder; the command that resumes a Claude Code or Codex session |
+| `places.js` | Where an empty group sits among its siblings |
 | `picker.js`, `buttons.js`, `settings.js` | The new-tab picker, the user's toolbar buttons, the settings page |
 | `styles.js`, `icons.js`, `tooltip.js` | The look |
 | `claude/` | The Claude Code plugin: the `tabby` skill, its scripts and the hooks |
@@ -126,10 +129,11 @@ Checks that every Claude Code hook ends by itself while its stdin stays open: wi
 
 ```sh
 node test-picker.js
+node test-places.js
 node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
 ```
 
-Check the new-tab picker (its rows, the filter and where the new tab lands), empty groups, and Esc cancelling a drag; the e2e right-clicks and drags in a test Tabby (it closes that window's tabs).
+Check the new-tab picker (its rows, the filter and where the new tab lands), empty groups and where they sit, Close group, and Esc cancelling a drag; the e2e right-clicks and drags in a test Tabby (it closes that window's tabs).
 
 ## Licence
 
