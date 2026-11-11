@@ -8,7 +8,7 @@
     "tab-groups"
   ],
   "scripts": {
-    "test": "node test-resume.js && node test-inbox.js && node test-picker.js && node test-places.js && node test-scope.js && node claude/scripts/asking.test.mjs && node claude/scripts/compacting.test.mjs && node claude/scripts/inbox.test.mjs && node claude/scripts/hooks-exit.test.mjs"
+    "test": "node test-resume.js && node test-inbox.js && node test-picker.js && node test-places.js && node test-scope.js && node test-tabmenu.js && node claude/scripts/asking.test.mjs && node claude/scripts/compacting.test.mjs && node claude/scripts/inbox.test.mjs && node claude/scripts/hooks-exit.test.mjs"
   },
   "author": "robw0ng",
   "license": "MIT",
@@ -31,7 +31,8 @@
     "windows.js",
     "picker.js",
     "places.js",
-    "scope.js"
+    "scope.js",
+    "tabmenu.js"
   ],
   "private": true
 }

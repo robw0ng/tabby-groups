@@ -46,6 +46,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | Change a group | Right-click its header: colour, rename, collapse, pin, move into another group, ungroup, close, delete (when empty) |
 | Make an empty group | Right-click empty space > New empty group; in a group's space, New empty subgroup. Type its name, then Enter. |
 | Close a group | Right-click its header > Close group: closes every tab in it and its subgroups (pinned ones too), then removes the groups. It asks first when a tab is busy or pinned. Reopen closed tab brings the tabs back one by one; Tabby keeps the last 5. |
+| Use a tab's menu | Right-click a tab: Open folder, Open in VS Code (when `code` is on PATH), Open repo (a Claude tab whose session works in another repo than its folder), Add to group, Rename, Copy path, Move to window, Close group (in a group), and More options… with Tabby's whole menu. Shift+F10 or the menu key opens it for the active tab (so a terminal app does not get those keys). With tabs on top or bottom, Tabby's own menu shows. Settings → Tab groups → Small tab menu off, or `"smallTabMenu": false` in `tabby-groups.json`, gives Tabby's full menu back. On macOS, VS Code's `code` command must be installed (VS Code: Shell Command: Install 'code' command in PATH), and a Tabby started from the Dock may not see it. |
 | Collapse or expand | Click the group header |
 | Leave a group | Right-click the tab > Remove from group |
 | Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along (when it was the group's last tab, the group also stays behind, empty). If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
@@ -95,6 +96,7 @@ Plain JavaScript with no build step and no dependencies: Tabby loads `index.js`,
 | `agent.js`, `inbox.js` | A Claude tab's state (busy, asking, compacting) and its message inbox, from the tab title and the files the Claude Code hooks write |
 | `processes.js`, `resume.js` | What runs in a tab and in which folder; the command that resumes a Claude Code or Codex session |
 | `places.js` | Where an empty group sits among its siblings |
+| `tabmenu.js` | The small tab menu: its items, VS Code on PATH, and a Claude session's repo from its transcript |
 | `scope.js` | Group ids, names unique among siblings, lookup by name or path, and the migration of groups saved by name |
 | `picker.js`, `buttons.js`, `settings.js` | The new-tab picker, the user's toolbar buttons, the settings page |
 | `styles.js`, `icons.js`, `tooltip.js` | The look |
@@ -132,6 +134,7 @@ Checks that every Claude Code hook ends by itself while its stdin stays open: wi
 node test-picker.js
 node test-places.js
 node test-scope.js
+node test-tabmenu.js
 node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
 ```
 

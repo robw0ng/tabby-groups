@@ -14,6 +14,7 @@ const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
 const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
+const { findCode, transcriptOf, sessionRepo, smallMenu } = require('./tabmenu')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -568,37 +569,42 @@ function install (injector) {
                 return []
             }
             tab = top(tab)
-            const newGroup = parent => () => addTab(tab, createGroup(newGroupName(), parent).id)
-            const groupsTree = tree()
-            const items = [{
-                label: 'Add to group',
-                submenu: [
-                    ...groupsTree.map(({ g, depth }) => ({
-                        label: ' '.repeat(depth) + g.name, type: 'radio', checked: tab.__tg === g.id, click: () => tab.__tg !== g.id && addTab(tab, g.id),
-                    })),
-                    ...groupsTree.length ? [{ type: 'separator' }] : [],
-                    { label: 'New group', click: newGroup(null) },
-                ],
-            }]
-            if (tab.__tg) {
-                items.push(
-                    { label: `New subgroup of ${groups.get(tab.__tg)?.name}`, click: newGroup(tab.__tg) },
+            return [
+                addToGroupMenu(tab),
+                ...tab.__tg ? [
+                    { label: `New subgroup of ${groups.get(tab.__tg)?.name}`, click: () => addTab(tab, createGroup(newGroupName(), tab.__tg).id) },
                     { label: 'Remove from group', click: () => removeTab(tab) },
-                )
-            }
-            const moveTo = async to => moveFailed(await windowsApi.move(tab, to))
-            items.push({
-                label: 'Move to window',
-                submenu: [
-                    ...windowsApi.windows().map(w => ({ label: `Window ${w.n}${w.me ? ' (this one)' : ''}`, enabled: !w.me, click: () => moveTo(w.n) })),
-                    { type: 'separator' },
-                    { label: 'New window', click: () => moveTo('new') },
-                ],
-            })
-            return items
+                ] : [],
+                moveToWindowMenu(tab),
+            ]
         },
     }
     menuProviders.push(menuProvider)
+    function addToGroupMenu (tab) {
+        const groupsTree = tree()
+        return {
+            label: 'Add to group',
+            submenu: [
+                ...groupsTree.map(({ g, depth }) => ({
+                    label: ' '.repeat(depth) + g.name, type: 'radio', checked: tab.__tg === g.id, click: () => tab.__tg !== g.id && addTab(tab, g.id),
+                })),
+                ...groupsTree.length ? [{ type: 'separator' }] : [],
+                { label: 'New group', click: () => addTab(tab, createGroup(newGroupName(), null).id) },
+            ],
+        }
+    }
+    function moveToWindowMenu (tab) {
+        const moveTo = async to => moveFailed(await windowsApi.move(tab, to))
+        return {
+            label: 'Move to window',
+            submenu: [
+                ...windowsApi.windows().map(w => ({ label: `Window ${w.n}${w.me ? ' (this one)' : ''}`, enabled: !w.me, click: () => moveTo(w.n) })),
+                { type: 'separator' },
+                { label: 'New window', click: () => moveTo('new') },
+            ],
+        }
+    }
+
 
     const style = document.createElement('style')
     style.textContent = CSS + `.tabs-on-left .tabs, .tabs-on-right .tabs { --tg-gap: ${gap}px; }`
@@ -1452,12 +1458,14 @@ function install (injector) {
         pickerPins = []
         autoResume = false
         autoReload = true
+        smallTabMenu = true
         try {
             const file = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8'))
             rules = file.icons ?? []
             buttonRules = file.buttons ?? []
             autoResume = file.autoResume === true
             autoReload = file.autoReload !== false
+            smallTabMenu = file.smallTabMenu !== false
             pickerPins = Array.isArray(file.picker) ? file.picker : []
         } catch (e) {
             if (e.code !== 'ENOENT') {
@@ -1491,6 +1499,59 @@ function install (injector) {
     }
     // "autoReload": false in tabby-groups.json: an update only offers "Reload plugins" instead of reloading them itself.
     let autoReload = true
+    let smallTabMenu = true
+
+    // The small tab menu ("smallTabMenu": false in tabby-groups.json turns it off): a few common actions, and Tabby's
+    // whole menu, every provider's items included, under "More options…".
+    const TabHeader = core.TabHeaderComponent
+    const origBuildMenu = TabHeader?.prototype.buildContextMenu
+    let codeExe
+    if (origBuildMenu) {
+        TabHeader.prototype.buildContextMenu = async function () {
+            const full = await origBuildMenu.call(this)
+            if (disposed || !smallTabMenu || !sideBar()) {
+                return full
+            }
+            const tab = top(this.tab)
+            const info = (tab.getFocusedTab?.() ?? tab.getAllTabs?.()[0] ?? tab).__tgInfo
+            const cwd = info?.cwd && require('fs').existsSync(info.cwd) ? info.cwd : null
+            const transcript = info?.kind === 'claude' && transcriptOf(info.sessionId)
+            codeExe ??= findCode()
+            const platform = injector.get(core.PlatformService)
+            return smallMenu({
+                cwd, repo: transcript ? sessionRepo(transcript) : null, code: !!codeExe, grouped: !!tab.__tg,
+                addToGroup: addToGroupMenu(tab), moveToWindow: moveToWindowMenu(tab), more: full,
+            }, {
+                open: dir => platform.openPath(dir),
+                // VS Code itself, with no shell between (on Windows `code` is a batch file).
+                code: dir => {
+                    const env = { ...process.env }
+                    delete env.ELECTRON_RUN_AS_NODE
+                    const child = require('child_process').spawn(codeExe, [dir], { detached: true, stdio: 'ignore', env })
+                    child.on('error', e => injector.get(core.NotificationsService).error(`Could not start VS Code: ${e.message}`))
+                    child.unref()
+                },
+                rename: () => app.renameTab(tab),
+                copy: text => platform.setClipboard({ text }),
+                closeGroup: () => closeGroup(tab.__tg),
+            })
+        }
+    }
+    // Shift+F10 or the menu key opens the active tab's menu, wherever the focus is (the side bar's rows take none), so a
+    // terminal app never gets those two keys. Electron opens the menu at the pointer.
+    function onTabMenuKey (e) {
+        if (!(e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) || !smallTabMenu || !sideBar()) {
+            return
+        }
+        const row = document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.indexOf(app.activeTab)]
+        if (row) {
+            e.preventDefault()
+            e.stopPropagation()
+            const r = row.getBoundingClientRect()
+            row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + r.height / 2 }))
+        }
+    }
+    document.addEventListener('keydown', onTabMenuKey, true)
     const buttonBar = createButtons({ open, drawIcon, hideTip, isDisposed: () => disposed, autoReload: () => autoReload })
     /** This plugin's reload: drop its modules from the require cache and install the files on disk again. */
     function reload () {
@@ -2240,6 +2301,10 @@ function install (injector) {
         app.renameTab = origRename
         app.duplicateTab = origDuplicate
         app.toggleTabPinned = origTogglePin
+        if (origBuildMenu) {
+            TabHeader.prototype.buildContextMenu = origBuildMenu
+        }
+        document.removeEventListener('keydown', onTabMenuKey, true)
         if (origTabDropped) {
             SplitTab.prototype.onTabDropped = origTabDropped
         }

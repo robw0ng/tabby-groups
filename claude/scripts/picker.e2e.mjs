@@ -374,10 +374,25 @@ const closed2 = await run(`async () => { const tg = window.__tabbyGroups; const 
 await sleep(1000);
 check('closeGroup takes a name or a path; the groups go', closed2 === true && !(await groupsNow()).some((g) => ['tooling', 'web', 'owners', 'leads'].includes(g.name)), await groupsNow());
 
+// The small tab menu: Tabby builds it in the tab header (a native menu, so the items are read from the builder).
+const menu = await run(`async () => {
+  const ng = require('@angular/core');
+  const c = ng.ɵgetLContext(document.querySelector('.tab-bar .tabs > tab-header'));
+  const header = c.lView[c.nodeIndex][8];
+  const items = await header.buildContextMenu();
+  const labels = xs => xs.map(i => i.type === 'separator' ? '—' : i.label);
+  return { small: labels(items), more: labels(items.at(-1)?.submenu ?? []) };
+}`);
+const core8 = ['Open folder', 'Rename', 'Copy path', 'Add to group', 'Move to window', 'More options…'];
+check('a tab\'s right-click menu is the small one, in order, ending with More options…', core8.every((l) => menu.small.includes(l)) && menu.small.at(-1) === 'More options…'
+  && menu.small.indexOf('Open folder') === 0 && menu.small.indexOf('Add to group') < menu.small.indexOf('Rename'), menu.small);
+check('More options… holds Tabby\'s full menu (Duplicate, Close, the plugin\'s own items)', ['Duplicate', 'Close', 'Add to group', 'Move to window'].every((l) => menu.more.includes(l)), menu.more);
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
 check('right-click on a tab opens no picker', !s.picker);
+console.log('By eye: the menu now open is the small one: Open folder opens Explorer/Finder in the tab\'s folder; Open in VS Code opens it (when code is on PATH); on a Claude tab working in another repo, Open repo; Arrow keys and Enter work in it; Shift+F10 (or the menu key) opens it for the active tab, also with the terminal focused; Settings > Tab groups > Small tab menu off brings back Tabby\'s full menu.');
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
 console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
