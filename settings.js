@@ -42,7 +42,8 @@ function renderSettings (host, file, profiles) {
     const write = (change, input, on) => {
         const current = readSettings(file)
         if (!current) {
-            input.checked = !on
+            // A switch flips back; a select (whose `on` is the value it had) shows that value again.
+            input.tagName === 'SELECT' ? input.value = on : input.checked = !on
             error.textContent = `${file} is not valid JSON; fix it first.`
             return
         }
@@ -59,6 +60,14 @@ function renderSettings (host, file, profiles) {
         line('Small tab menu',
             'A right-click on a tab shows a few common actions, with Tabby\'s full menu under "More options…". Off: Tabby\'s full menu.',
             toggle(settings?.smallTabMenu !== false, (on, input) => write(s => ({ ...s, smallTabMenu: on }), input, on))),
+        line('When a tab closes, show',
+            'Which tab shows when you close the active one.',
+            h('select', { className: 'form-select w-auto ms-auto', onchange: e => {
+                const value = e.target.value
+                write(s => ({ ...s, focusOnClose: value }), e.target, readSettings(file)?.focusOnClose ?? 'recent')
+            } },
+                ...[['recent', 'The most recent tab in its group'], ['next', 'The next tab'], ['previous', 'The previous tab']].map(([value, text]) =>
+                    h('option', { value, textContent: text, selected: (settings?.focusOnClose ?? 'recent') === value })))),
         h('h3', { className: 'mt-4 mb-3', textContent: 'New-tab picker' }),
         h('div', { className: 'text-muted mb-2', textContent: 'A right-click on free side-bar space shows the default profile, then the profiles pinned here and the other "picker" entries in tabby-groups.json.' }),
         pinList,

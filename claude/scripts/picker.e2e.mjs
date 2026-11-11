@@ -388,6 +388,30 @@ check('a tab\'s right-click menu is the small one, in order, ending with More op
   && menu.small.indexOf('Open folder') === 0 && menu.small.indexOf('Add to group') < menu.small.indexOf('Rename'), menu.small);
 check('More options… holds Tabby\'s full menu (Duplicate, Close, the plugin\'s own items)', ['Duplicate', 'Close', 'Add to group', 'Move to window'].every((l) => menu.more.includes(l)), menu.more);
 
+// After the active tab closes: the most recent tab of its group shows, else the most recent tab anywhere.
+const focus = await run(`async () => {
+  const app = ${APP};
+  const tg = window.__tabbyGroups;
+  const by = t => app.tabs.find(x => (x.customTitle || x.title) === t);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  await tg.open({ title: 'f1', group: 'focusg' }); await tg.open({ title: 'f2', group: 'focusg' }); await tg.open({ title: 'f3', group: 'focusg' });
+  await tg.open({ title: 'fout' });
+  for (const t of ['f1', 'fout', 'f3']) { app.selectTab(by(t)); await sleep(100) }
+  await app.closeTab(by('f3'), false, true); await sleep(300);
+  const inGroup = app.activeTab && (app.activeTab.customTitle || app.activeTab.title);
+  await app.closeTab(by('f1'), false, true); await sleep(300);
+  const sameGroupLeft = app.activeTab && (app.activeTab.customTitle || app.activeTab.title);
+  app.selectTab(by('f2')); await sleep(100);
+  await app.closeTab(by('f2'), false, true); await sleep(300);
+  const lastOfGroup = app.activeTab && (app.activeTab.customTitle || app.activeTab.title);
+  await app.closeTab(by('fout'), false, true);
+  tg.deleteGroup('focusg');
+  return { inGroup, sameGroupLeft, lastOfGroup };
+}`);
+check('closing the active tab shows the most recent tab of its group, not the most recent tab outside it', focus.inGroup === 'f1', focus);
+check('again: the group\'s other tab shows, though a tab outside was used more recently', focus.sameGroupLeft === 'f2', focus);
+check('the last tab of its group closed: the most recent tab anywhere shows', focus.lastOfGroup === 'fout', focus);
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

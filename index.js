@@ -12,7 +12,7 @@ const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
-const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow } = require('./places')
+const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
 const { findCode, transcriptOf, sessionRepo, smallMenu } = require('./tabmenu')
 
@@ -1459,6 +1459,7 @@ function install (injector) {
         autoResume = false
         autoReload = true
         smallTabMenu = true
+        focusOnClose = 'recent'
         try {
             const file = JSON.parse(require('fs').readFileSync(userIconsFile, 'utf8'))
             rules = file.icons ?? []
@@ -1466,6 +1467,7 @@ function install (injector) {
             autoResume = file.autoResume === true
             autoReload = file.autoReload !== false
             smallTabMenu = file.smallTabMenu !== false
+            focusOnClose = ['recent', 'next', 'previous'].includes(file.focusOnClose) ? file.focusOnClose : 'recent'
             pickerPins = Array.isArray(file.picker) ? file.picker : []
         } catch (e) {
             if (e.code !== 'ENOENT') {
@@ -1500,6 +1502,20 @@ function install (injector) {
     // "autoReload": false in tabby-groups.json: an update only offers "Reload plugins" instead of reloading them itself.
     let autoReload = true
     let smallTabMenu = true
+    // "focusOnClose" in tabby-groups.json: which tab shows when the active tab closes (places.js focusAfterClose).
+    let focusOnClose = 'recent'
+    const origRemoveTab = app.removeTab
+    app.removeTab = function (tab) {
+        const target = tab === this.activeTab && !disposed ? focusAfterClose(this.tabs, this.mruTabs ?? [], tab, focusOnClose) : null
+        if (!target) {
+            return origRemoveTab.call(this, tab)
+        }
+        // With no active tab, Tabby selects nothing as it removes the tab; selecting its pick first would mark that tab
+        // seen and put it first in the recent list.
+        this._activeTab = null
+        origRemoveTab.call(this, tab)
+        this.selectTab(target)
+    }
 
     // The small tab menu ("smallTabMenu": false in tabby-groups.json turns it off): a few common actions, and Tabby's
     // whole menu, every provider's items included, under "More options…".
@@ -2301,6 +2317,7 @@ function install (injector) {
         app.renameTab = origRename
         app.duplicateTab = origDuplicate
         app.toggleTabPinned = origTogglePin
+        app.removeTab = origRemoveTab
         if (origBuildMenu) {
             TabHeader.prototype.buildContextMenu = origBuildMenu
         }

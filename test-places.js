@@ -1,6 +1,6 @@
 // node test-places.js: checks where empty groups sit (places.js), with no Tabby. On screen: picker.e2e.mjs.
 const assert = require('assert')
-const { unitsOf, emptyIndex, groupOrder, trackSlots } = require('./places')
+const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose } = require('./places')
 
 const tab = (name, group) => ({ name, __tg: group })
 const mk = (...gs) => new Map(gs.map(g => [g.name, { parent: null, id: g.name, ...g }]))
@@ -55,5 +55,19 @@ for (tabs of [[], [a], [a, b], [a, b, c]]) {
     trackSlots(tabs, groups, fresh)
 }
 assert.strictEqual(groups.get('E').slot, 2, 'restored: after a and b')
+
+// The tab after a close: the most recent of its group, else the most recent anywhere; or the tab above; or Tabby's own.
+{
+    const [x, y, z, w, v] = ['x', 'y', 'z', 'w', 'v'].map(n => tab(n, ['y', 'z', 'w'].includes(n) ? 'G' : undefined))
+    const list = [x, y, z, w, v]
+    assert.strictEqual(focusAfterClose(list, [z, v, w, y, x], z, 'recent'), w, 'the most recent other tab of its group')
+    assert.strictEqual(focusAfterClose(list, [x, v, w], x, 'recent'), v, 'a tab in no group: the most recent tab')
+    assert.strictEqual(focusAfterClose([x, y, v], [y, v, x], y, 'recent'), v, 'the last of its group: the most recent tab')
+    assert.strictEqual(focusAfterClose(list, [], z, 'recent'), null, "no recent list: Tabby's own")
+    assert.strictEqual(focusAfterClose(list, [z, w], z, 'previous'), y)
+    assert.strictEqual(focusAfterClose(list, [z, w], x, 'previous'), y, 'the first tab: the one below')
+    assert.strictEqual(focusAfterClose(list, [z, w], z, 'next'), null, "next: Tabby's own choice")
+    assert.strictEqual(focusAfterClose([x], [x], x, 'recent'), null, 'the last tab: nothing to show')
+}
 
 console.log('test-places: all passed')

@@ -120,4 +120,22 @@ function follow (marks, g, unit) {
     g.slot ??= 0
 }
 
-module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow }
+/**
+ * The tab to show when the active tab `closed` closes (`tabs` still holds it; `mru`: Tabby's most-recent-first list).
+ * 'recent': the most recently used tab of its own group, else the most recently used tab; 'previous': the tab above it.
+ * Null for 'next', Tabby's own choice (the tab below it, else above), or when no tab is left.
+ */
+function focusAfterClose (tabs, mru, closed, mode = 'recent') {
+    const i = tabs.indexOf(closed)
+    const near = tabs[i - 1] ?? tabs[i + 1] ?? null
+    if (mode === 'next' || !near) {
+        return null
+    }
+    if (mode === 'previous') {
+        return near
+    }
+    const recent = mru.filter(t => t !== closed && tabs.includes(t))
+    return recent.find(t => closed.__tg && t.__tg === closed.__tg) ?? recent[0] ?? null
+}
+
+module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose }
