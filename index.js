@@ -13,6 +13,7 @@ const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
 const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow } = require('./places')
+const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -24,21 +25,33 @@ function install (injector) {
     // Read once at install; a zoom change keeps the old gap until Tabby restarts.
     const gap = Math.round(6 * devicePixelRatio) / devicePixelRatio
 
-    /** @type {Map<string, {name: string, color: string|null, collapsed: boolean, parent: string|null}>} */
+    // By id. The name is a label, unique only among siblings; parent is the parent's id (scope.js).
+    /** @type {Map<string, {id: string, name: string, color: string|null, collapsed: boolean, parent: string|null}>} */
     const groups = new Map()
     // A reload (dispose, then install) hands the groups over; the tabs still carry their tab.__tg.
     // An empty group has no tab to carry it through a restart, so the main window (the one Tabby restores) keeps the
     // empty groups in localStorage. A second window's empty groups end with its tabs, as Tabby does not restore that window.
     const EMPTY_KEY = 'tabby-groups:empty-groups'
     let saved = window.__tabbyGroupsState?.groups
-    if (!saved && injector.get(core.BOOTSTRAP_DATA).isMainWindow) {
+    const isMain = injector.get(core.BOOTSTRAP_DATA).isMainWindow
+    if (!saved && isMain) {
         try {
             saved = JSON.parse(localStorage.getItem(EMPTY_KEY))
         } catch { }
     }
-    for (const g of Array.isArray(saved) ? saved : []) {
-        groups.set(g.name, { ...g })
+    // Before ids, groups were saved by name. The first install with ids keeps a copy of what it migrates.
+    const BACKUP_KEY = 'tabby-groups:ids-backup'
+    if (isMain && !localStorage.getItem(BACKUP_KEY) && (saved?.some?.(g => !g?.id) || /"tabbyGroup":\[\{"name"/.test(localStorage.tabsRecovery ?? ''))) {
+        try {
+            const path = require('path')
+            const file = path.join(injector.get(core.BOOTSTRAP_DATA).userPluginsPath, '..', `tabby-groups-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
+            require('fs').writeFileSync(file, JSON.stringify({ handover: window.__tabbyGroupsState?.groups ?? null, emptyGroups: localStorage.getItem(EMPTY_KEY), tabsRecovery: localStorage.tabsRecovery ?? null }))
+            localStorage.setItem(BACKUP_KEY, file)
+        } catch (e) {
+            console.warn('tabby-groups: no backup of the old saved groups', e.message)
+        }
     }
+    const oldNames = loadSaved(groups, saved)
     delete window.__tabbyGroupsState
 
     const top = tab => app.tabs.includes(tab) ? tab : app.getParentTab(tab) ?? tab
@@ -62,61 +75,86 @@ function install (injector) {
     }
 
     /** The group and its ancestors, root first. */
-    function chainOf (name) {
-        return chainIn(groups, name)
+    function chainOf (id) {
+        return chainIn(groups, id)
     }
     // Each empty group's neighbours, for trackSlots (places.js): they keep it in place as tabs around it come and go.
     const marks = new Map()
-    const inGroup = (tab, name) => !!tab && chainOf(tab.__tg).some(g => g.name === name)
-    const members = name => app.tabs.filter(t => t.__tg === name)
-    const subtree = name => app.tabs.filter(t => inGroup(t, name))
+    const inGroup = (tab, id) => !!tab && chainOf(tab.__tg).some(g => g.id === id)
+    const members = id => app.tabs.filter(t => t.__tg === id)
+    const subtree = id => app.tabs.filter(t => inGroup(t, id))
+    // A reload from a copy without ids leaves group names on the tabs.
+    app.tabs.forEach(t => { if (t.__tg && !groups.has(t.__tg) && oldNames.has(t.__tg)) t.__tg = oldNames.get(t.__tg) })
     // A collapsed group still shows the path to its active tab, and folds it away once another tab is selected.
     // A group under a collapsed parent shows as collapsed, so one click opens it and its parents.
-    const shut = g => chainOf(g.name).some(a => a.collapsed)
+    const shut = g => chainOf(g.id).some(a => a.collapsed)
     const tabHidden = tab => tab !== app.activeTab && chainOf(tab.__tg).some(g => g.collapsed)
-    const headerHidden = g => !inGroup(app.activeTab, g.name) && chainOf(g.parent).some(a => a.collapsed)
+    const headerHidden = g => !inGroup(app.activeTab, g.id) && chainOf(g.parent).some(a => a.collapsed)
 
-    function ensureGroup (name, opts = {}) {
-        let g = groups.get(name)
-        const created = !g
-        if (!g) {
-            g = { name, color: COLORS[groups.size % COLORS.length].value, collapsed: false, parent: null, pinned: false }
-            groups.set(name, g)
-        }
-        if (opts.color !== undefined) {
-            setColor(name, opts.color, false)
-        }
-        if (opts.parent !== undefined && opts.parent !== g.parent) {
-            if (opts.parent && opts.parent !== name) {
-                ensureGroup(opts.parent)
-            }
-            // Throws, so a script over CDP learns of the refusal instead of getting a top-level group.
-            if (!setParent(name, opts.parent, false)) {
-                throw new Error(`tabby-groups: cannot put "${name}" inside "${opts.parent}", because it would contain itself`)
-            }
-        }
-        // A new subgroup in its parent's colour would melt into it: it takes the next palette colour. A chosen colour stays.
-        const parentColor = groups.get(g.parent)?.color
-        if (created && opts.color === undefined && parentColor && g.color === parentColor) {
+    /** A new group under `parent` (an id; null: the top level), named `name` or "name (n)" when a sibling has it. */
+    function createGroup (name, parent = null) {
+        const g = { id: newId(), name: uniqueName(groups, parent, name), color: COLORS[groups.size % COLORS.length].value, collapsed: false, parent, pinned: false }
+        // A new subgroup in its parent's colour would melt into it: it takes the next palette colour.
+        if (groups.get(parent)?.color === g.color) {
             g.color = COLORS[(COLORS.findIndex(c => c.value === g.color) + 1) % COLORS.length].value
+        }
+        groups.set(g.id, g)
+        if (parent) {
+            // At the end of its parent's panel while it is empty (places.js).
+            g.slot = unitsOf(app.tabs, groups, parent).length
         }
         return g
     }
 
-    function addTab (tab, name, opts = {}) {
+    /**
+     * The group a script means (an id, a name only one group has, a path, or { name, parent }: scope.js), made when
+     * missing. With `parent` (any of those; null: the top level) it is the child of that name there, the parent made too.
+     */
+    function groupFor (ref, { parent, color } = {}) {
+        // { name, parent }, or a path not made yet ("a/b"): the last name under the rest.
+        if (ref && typeof ref === 'object') {
+            return groupFor(ref.name, { parent: ref.parent ?? null, color })
+        }
+        if (parent === undefined && String(ref).includes('/') && resolve(groups, ref) == null) {
+            const parts = String(ref).split('/')
+            const last = parts.pop()
+            const pid = parts.reduce((at, part) => groupFor(part, { parent: at }).id, null)
+            return groupFor(last, { parent: pid, color })
+        }
+        let g
+        if (parent !== undefined) {
+            const pid = parent === null ? null : groupFor(parent).id
+            g = groups.get(ref) ?? childNamed(groups, pid, ref) ?? createGroup(ref, pid)
+            // Throws, so a script over CDP learns of the refusal instead of getting a group elsewhere.
+            if (g.parent !== pid && !setParent(g.id, pid, false)) {
+                throw new Error(`tabby-groups: cannot put "${g.name}" inside "${pathOf(groups, pid)}", because it would contain itself`)
+            }
+        } else {
+            g = groups.get(resolve(groups, ref)) ?? createGroup(ref, null)
+        }
+        if (color !== undefined) {
+            setColor(g.id, color, false)
+        }
+        return g
+    }
+
+    function addTab (tab, id, opts = {}) {
         tab = top(tab)
-        const g = ensureGroup(name, opts)
+        const g = groups.get(id)
+        if (!g) {
+            return
+        }
         // The tab's own colour is left alone: the panel shows the group colour, and the own colour returns when the tab leaves.
-        setMembership(tab, name)
+        setMembership(tab, id)
         // Adding a tab to a collapsed group expands its chain, so a new tab never vanishes.
-        chainOf(name).forEach(a => { a.collapsed = false })
+        chainOf(id).forEach(a => { a.collapsed = false })
 
         // Lands at the end of its group, or first when its title is the group's name; in an empty group, where the group
         // shows. A new top-level group made from a tab leaves the tab where it is.
-        const others = subtree(name).filter(t => t !== tab)
+        const others = subtree(id).filter(t => t !== tab)
         if (others.length || g.parent || g.slot != null) {
             // A restored tab keeps its saved place: restore runs in saved order, and titles change after launch.
-            const lead = !opts.restore && titleOf(tab) === name && others.length
+            const lead = !opts.restore && titleOf(tab) === g.name && others.length
             let target = !others.length ? emptyIndex(app.tabs, groups, g, [tab])
                 : lead ? app.tabs.indexOf(others[0]) : app.tabs.indexOf(others[others.length - 1]) + 1
             if (app.tabs.indexOf(tab) < target) {
@@ -131,15 +169,15 @@ function install (injector) {
      * Puts a tab in a group (or none) and sets its pin to match that group's top level before the tab is moved, since
      * Tabby clamps a move to the pinned or unpinned part of the list by the tab's current pin.
      */
-    function setMembership (tab, name) {
+    function setMembership (tab, id) {
         const was = !!chainOf(tab.__tg)[0]?.pinned
-        const now = !!chainOf(name)[0]?.pinned
+        const now = !!chainOf(id)[0]?.pinned
         // A local pin belongs to the group it was made in.
-        if (tab.__tg !== name) {
+        if (tab.__tg !== id) {
             delete tab.__tgPinned
         }
-        if (name) {
-            tab.__tg = name
+        if (id) {
+            tab.__tg = id
         } else {
             delete tab.__tg
         }
@@ -181,14 +219,14 @@ function install (injector) {
      */
     function orderedSubtree (g) {
         const units = []
-        for (const t of subtree(g.name)) {
+        for (const t of subtree(g.id)) {
             const chain = chainOf(t.__tg)
             const unit = chain[chain.indexOf(g) + 1] ?? t
             if (!units.includes(unit)) {
                 units.push(unit)
             }
         }
-        const isGroup = u => groups.get(u.name) === u
+        const isGroup = u => groups.get(u.id) === u
         const pinned = u => isGroup(u) ? u.pinned : u.__tgPinned
         return [...units.filter(pinned), ...units.filter(u => !pinned(u))].flatMap(u => isGroup(u) ? orderedSubtree(u) : [u])
     }
@@ -216,8 +254,8 @@ function install (injector) {
             return false
         }
         for (const c of [...groups.values()]) {
-            if (chainOf(c.name).includes(g)) {
-                groups.delete(c.name)
+            if (chainOf(c.id).includes(g)) {
+                groups.delete(c.id)
                 marks.delete(c)
             }
         }
@@ -244,7 +282,7 @@ function install (injector) {
     }
     async function closeTabsOf (g) {
         const name = g.name
-        const tabs = subtree(name)
+        const tabs = subtree(g.id)
         // An agent tab is busy while its agent works (the agent itself is always a running command); any other tab while
         // it runs a command, as Tabby's own close asks.
         const busyPane = async p => p.__tgInfo?.agent ? p.__tgInfo.agent.state === 'busy' : !!(await p.session?.getChildProcesses?.().catch(() => null))?.length
@@ -261,21 +299,21 @@ function install (injector) {
             }
         }
         // Not Tabby's per-tab check: it would ask again for each running command, and for each agent tab. Only the tabs
-        // asked about, and only those still in the group (by its current name: a rename while the question was open).
-        for (const t of tabs.filter(t => app.tabs.includes(t) && inGroup(t, g.name))) {
+        // asked about, and only those still in the group.
+        for (const t of tabs.filter(t => app.tabs.includes(t) && inGroup(t, g.id))) {
             await app.closeTab(t, false, true)
         }
         // A tab that stayed open, or came in meanwhile, keeps its group.
-        return groups.get(g.name) === g && deleteGroup(g.name)
+        return groups.get(g.id) === g && deleteGroup(g.id)
     }
 
     /** A new empty group (a subgroup of `parent` when given) after `slot` units of its panel, named "Group N" and open for renaming. */
     function newEmptyGroup (parent, slot) {
         // A search would hide the new header, and a rename in a hidden header never ends.
         search.value = query = ''
-        const g = ensureGroup(newGroupName(), { parent: parent ?? null })
+        const g = createGroup(newGroupName(), parent ?? null)
         g.slot = slot ?? unitsOf(app.tabs, groups, panelOf(groups, g)).length
-        chainOf(g.name).forEach(a => { a.collapsed = false })
+        chainOf(g.id).forEach(a => { a.collapsed = false })
         changed()
         render()
         startRename(g)
@@ -288,7 +326,7 @@ function install (injector) {
             return
         }
         // With their ancestors, so an empty subgroup keeps its parent even when the parent's tabs do not come back.
-        const keep = new Set([...groups.values()].filter(g => !subtree(g.name).length).flatMap(g => chainOf(g.name)))
+        const keep = new Set([...groups.values()].filter(g => !subtree(g.id).length).flatMap(g => chainOf(g.id)))
         try {
             localStorage.setItem(EMPTY_KEY, JSON.stringify([...keep]))
         } catch { }
@@ -319,14 +357,16 @@ function install (injector) {
     }
 
     /** Moves a group under another one, or to the top level with null. Refuses a move into its own subtree. */
-    function setParent (name, parent, emit = true) {
-        const g = groups.get(name)
-        if (!g || (parent && (!groups.has(parent) || chainOf(parent).some(a => a.name === name)))) {
+    function setParent (id, parent, emit = true) {
+        const g = groups.get(id)
+        if (!g || (parent && (!groups.has(parent) || chainOf(parent).some(a => a.id === id)))) {
             return false
         }
         const moved = g.parent !== (parent || null)
         g.parent = parent || null
         if (moved) {
+            // A sibling there with the same name: this one becomes "name (n)".
+            g.name = uniqueName(groups, g.parent, g.name, g)
             // An empty group moved into another panel goes to its end (a group with tabs takes its slot from them).
             g.slot = unitsOf(app.tabs, groups, panelOf(groups, g)).length
             marks.delete(g)
@@ -337,79 +377,74 @@ function install (injector) {
         return true
     }
 
-    function rename (oldName, newName) {
-        const g = groups.get(oldName)
-        if (!g || !newName || groups.has(newName)) {
+    /** A name a sibling has becomes "name (n)", the lowest free n. */
+    function rename (id, newName) {
+        const g = groups.get(id)
+        if (!g || !newName) {
             return false
         }
-        groups.delete(oldName)
-        g.name = newName
-        groups.set(newName, g)
-        members(oldName).forEach(t => { t.__tg = newName })
-        groups.forEach(c => { if (c.parent === oldName) c.parent = newName })
+        g.name = uniqueName(groups, g.parent, newName, g)
         changed()
         return true
     }
 
     /** Dissolves one level: its tabs and subgroups move up to its parent. */
-    function ungroup (name) {
-        const g = groups.get(name)
+    function ungroup (id) {
+        const g = groups.get(id)
         if (!g) {
             return
         }
         const parent = groups.get(g.parent)
         // Its units move up in order, so an empty subgroup keeps its place among them: after g's place, plus its own slot.
-        const inside = unitsOf(app.tabs, groups, name).length
-        groups.forEach(c => {
-            if (c.parent === name) {
-                c.parent = g.parent
-                c.slot = g.slot == null ? null : g.slot + Math.min(c.slot ?? inside, inside)
-                marks.delete(c)
-            }
-        })
-        marks.delete(g)
-        members(name).forEach(t => {
+        const inside = unitsOf(app.tabs, groups, id).length
+        members(id).forEach(t => {
             if (parent) {
-                t.__tg = parent.name
+                t.__tg = parent.id
             } else {
                 removeTab(t, false)
             }
         })
-        groups.delete(name)
+        // Gone before its subgroups move up, so one may take its name there.
+        groups.delete(id)
+        marks.delete(g)
+        groups.forEach(c => {
+            if (c.parent === id) {
+                c.parent = g.parent
+                c.name = uniqueName(groups, c.parent, c.name, c)
+                c.slot = g.slot == null ? null : g.slot + Math.min(c.slot ?? inside, inside)
+                marks.delete(c)
+            }
+        })
         changed()
     }
 
+    /** In side-bar order. `parent` is the parent's name, as before ids; `parentId` and `path` tell same-named groups apart. */
     function list () {
         return groupOrder(app.tabs, groups).map(g => ({
+            id: g.id,
             name: g.name,
+            path: pathOf(groups, g.id),
             color: g.color,
             collapsed: g.collapsed,
             pinned: !!g.pinned,
-            parent: g.parent,
-            tabs: members(g.name).map(t => ({ title: titleOf(t), index: app.tabs.indexOf(t) })),
-            needsYou: subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length,
-            asking: subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length,
-            running: subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length,
-            compacting: subtree(g.name).filter(t => t.__tgInfo?.agent?.compacting).length,
-            busy: subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length,
+            parent: groups.get(g.parent)?.name ?? null,
+            parentId: groups.has(g.parent) ? g.parent : null,
+            tabs: members(g.id).map(t => ({ title: titleOf(t), index: app.tabs.indexOf(t) })),
+            needsYou: subtree(g.id).filter(t => t.__tgInfo?.agent?.needsYou).length,
+            asking: subtree(g.id).filter(t => t.__tgInfo?.agent?.asking).length,
+            running: subtree(g.id).filter(t => t.__tgInfo?.agent?.background).length,
+            compacting: subtree(g.id).filter(t => t.__tgInfo?.agent?.compacting).length,
+            busy: subtree(g.id).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length,
         }))
     }
 
     /** Groups in tree order with their depth, for menus. */
-    function tree () {
-        const out = []
-        const walk = (parent, depth) => list().filter(g => g.parent === parent).forEach(g => {
-            out.push({ g: groups.get(g.name), depth })
-            walk(g.name, depth + 1)
-        })
-        walk(null, 0)
-        return out
-    }
+    const tree = () => groupOrder(app.tabs, groups).map(g => ({ g, depth: chainOf(g.id).length - 1 }))
 
     /** "Group N", N being the group count plus one, or the next free number; renamed later with a double-click. */
     function newGroupName () {
         let n = groups.size + 1
-        while (groups.has(`Group ${n}`)) {
+        while ([...groups.values()].some(g => g.name === `Group ${n}`)) {
             n++
         }
         return `Group ${n}`
@@ -498,31 +533,31 @@ function install (injector) {
             b.title = c.name
             b.addEventListener('click', () => {
                 closeMenu()
-                setColor(g.name, c.value)
+                setColor(g.id, c.value)
             })
             swatches.append(b)
         }
-        const moveTargets = tree().filter(t => t.g !== g && !chainOf(t.g.name).includes(g))
+        const moveTargets = tree().filter(t => t.g !== g && !chainOf(t.g.id).includes(g))
         const move = Object.assign(document.createElement('div'), { className: 'tg-item', textContent: 'Move into…' })
         move.addEventListener('click', () => fillMoveMenu(g, moveTargets))
         menuEl.append(
             swatches,
             sep(),
             menuItem('Rename', () => startRename(g)),
-            menuItem(shut(g) ? 'Expand' : 'Collapse', () => setCollapsed(g.name, !shut(g))),
-            menuItem(g.pinned ? 'Unpin group' : 'Pin group', () => setPinned(g.name, !g.pinned)),
+            menuItem(shut(g) ? 'Expand' : 'Collapse', () => setCollapsed(g.id, !shut(g))),
+            menuItem(g.pinned ? 'Unpin group' : 'Pin group', () => setPinned(g.id, !g.pinned)),
             ...g.parent || moveTargets.length ? [move] : [],
             sep(),
-            menuItem(g.parent ? 'Ungroup (move up a level)' : 'Ungroup', () => ungroup(g.name)),
-            subtree(g.name).length ? menuItem('Close group', () => closeGroup(g.name)) : menuItem('Delete group', () => deleteGroup(g.name)),
+            menuItem(g.parent ? 'Ungroup (move up a level)' : 'Ungroup', () => ungroup(g.id)),
+            subtree(g.id).length ? menuItem('Close group', () => closeGroup(g.id)) : menuItem('Delete group', () => deleteGroup(g.id)),
         )
     }
 
     function fillMoveMenu (g, targets) {
         menuEl.replaceChildren(
             Object.assign(document.createElement('div'), { className: 'tg-label', textContent: `Move "${g.name}" into` }),
-            menuItem('Top level', () => setParent(g.name, null), !g.parent),
-            ...targets.map(t => menuItem(' '.repeat(t.depth) + t.g.name, () => setParent(g.name, t.g.name), g.parent === t.g.name)),
+            menuItem('Top level', () => setParent(g.id, null), !g.parent),
+            ...targets.map(t => menuItem(' '.repeat(t.depth) + t.g.name, () => setParent(g.id, t.g.id), g.parent === t.g.id)),
         )
     }
 
@@ -533,13 +568,13 @@ function install (injector) {
                 return []
             }
             tab = top(tab)
-            const newGroup = parent => () => addTab(tab, newGroupName(), parent ? { parent } : {})
+            const newGroup = parent => () => addTab(tab, createGroup(newGroupName(), parent).id)
             const groupsTree = tree()
             const items = [{
                 label: 'Add to group',
                 submenu: [
                     ...groupsTree.map(({ g, depth }) => ({
-                        label: ' '.repeat(depth) + g.name, type: 'radio', checked: tab.__tg === g.name, click: () => tab.__tg !== g.name && addTab(tab, g.name),
+                        label: ' '.repeat(depth) + g.name, type: 'radio', checked: tab.__tg === g.id, click: () => tab.__tg !== g.id && addTab(tab, g.id),
                     })),
                     ...groupsTree.length ? [{ type: 'separator' }] : [],
                     { label: 'New group', click: newGroup(null) },
@@ -547,7 +582,7 @@ function install (injector) {
             }]
             if (tab.__tg) {
                 items.push(
-                    { label: `New subgroup of ${tab.__tg}`, click: newGroup(tab.__tg) },
+                    { label: `New subgroup of ${groups.get(tab.__tg)?.name}`, click: newGroup(tab.__tg) },
                     { label: 'Remove from group', click: () => removeTab(tab) },
                 )
             }
@@ -717,9 +752,9 @@ function install (injector) {
             return words.every(w => text.includes(w) || w.replace(/^#/, '') === number)
         }
         const hideTab = tab => q ? !matches(tab) : tabHidden(tab)
-        const hideHead = g => q ? !subtree(g.name).some(matches) : headerHidden(g)
+        const hideHead = g => q ? !subtree(g.id).some(matches) : headerHidden(g)
         // A subgroup's footer shows while anything below its header is visible.
-        const open = g => q ? !hideHead(g) : !headerHidden(g) && (!g.collapsed || inGroup(app.activeTab, g.name))
+        const open = g => q ? !hideHead(g) : !headerHidden(g) && (!g.collapsed || inGroup(app.activeTab, g.id))
         firstMatch = q ? app.tabs.find(matches) : null
         mountChrome(vertical)
 
@@ -727,7 +762,8 @@ function install (injector) {
         const makeFoot = (g, k) => {
             const f = document.createElement('div')
             f.className = 'tg-foot'
-            f.dataset.group = g.name
+            f.dataset.group = g.id
+            f.dataset.name = g.name
             f.innerHTML = '<div class="tg-foot-inner"></div>'
             f.style.setProperty('--tg-own', tint(g))
             f.style.setProperty('--tg-own-pct', tintPct(k) + '%')
@@ -736,13 +772,13 @@ function install (injector) {
         }
         // An empty group has no tab to hang on: it shows at its slot in its parent's panel (places.js), as a header and a
         // slim "empty" row. A group whose parent is not restored yet counts as top level.
-        const empties = [...groups.values()].filter(g => !subtree(g.name).length)
+        const empties = [...groups.values()].filter(g => !subtree(g.id).length)
         const shown = new Set()
         const emptiesUpTo = (panel, k) => empties.filter(g => !shown.has(g) && panelOf(groups, g) === panel && (g.slot ?? Infinity) <= k)
         // Placed after `ref`, or before it when `before`; returns the last row placed after.
         const emitEmpty = (g, ref, before = false) => {
             shown.add(g)
-            const chain = chainOf(g.name)
+            const chain = chainOf(g.id)
             const k = chain.length - 1
             const add = (el, row) => {
                 // A drop on the free space below goes after the last tab, above the empty groups (onDragMove marks it there).
@@ -757,9 +793,10 @@ function install (injector) {
             }
             add(makeHeader(g, k, k === 0 && !!rows.at(-1)?.chain.length, k > 0 && open(g)), { hidden: hideHead(g), kind: 'head' })
             const empty = Object.assign(document.createElement('div'), { className: 'tg-empty', textContent: 'Empty' })
-            empty.dataset.group = g.name
+            empty.dataset.group = g.id
+            empty.dataset.name = g.name
             add(empty, { hidden: !!q || shut(g), kind: 'empty' })
-            emptiesUpTo(g.name, Infinity).forEach(c => { ref = emitEmpty(c, ref, before) })
+            emptiesUpTo(g.id, Infinity).forEach(c => { ref = emitEmpty(c, ref, before) })
             if (k > 0) {
                 add(makeFoot(g, k), { hidden: !open(g), kind: 'foot' })
             }
@@ -780,18 +817,18 @@ function install (injector) {
             const chain = chainOf(tab.__tg)
             const prev = chainOf(app.tabs[i - 1]?.__tg)
             for (let k = commonDepth(chain, prev); k < chain.length; k++) {
-                unitStarts(k ? chain[k - 1].name : null, el)
+                unitStarts(k ? chain[k - 1].id : null, el)
                 const h = makeHeader(chain[k], k, k === 0 && !!rows.at(-1)?.chain.length, k > 0 && open(chain[k]))
                 el.before(h)
                 rows.push({ el: h, chain: chain.slice(0, k + 1), hidden: hideHead(chain[k]), kind: 'head' })
             }
-            unitStarts(chain.at(-1)?.name ?? null, el)
+            unitStarts(chain.at(-1)?.id ?? null, el)
             rows.push({ el, chain, hidden: hideTab(tab), kind: 'tab', active: tab === app.activeTab, tab })
             const next = chainOf(app.tabs[i + 1]?.__tg)
             let after = el
             // Each panel that ends here first takes its empty subgroups, then (below the top level) its footer.
             for (let k = chain.length - 1; k >= commonDepth(chain, next); k--) {
-                emptiesUpTo(chain[k].name, Infinity).forEach(c => { after = emitEmpty(c, after) })
+                emptiesUpTo(chain[k].id, Infinity).forEach(c => { after = emitEmpty(c, after) })
                 if (k >= 1) {
                     const f = makeFoot(chain[k], k)
                     after.after(f)
@@ -866,12 +903,13 @@ function install (injector) {
     function makeHeader (g, depth, afterGroup, open) {
         const h = document.createElement('div')
         h.className = 'tg-header ' + (depth ? 'tg-sub' : 'tg-root') + (afterGroup ? ' tg-after-group' : '') + (depth && !open ? ' tg-shut' : '')
-        h.dataset.group = g.name
+        h.dataset.group = g.id
+        h.dataset.name = g.name
         h.style.setProperty('--tg-own', tint(g))
         h.style.setProperty('--tg-own-pct', tintPct(depth) + '%')
         h.style.setProperty('--tg-own-depth', shadeOf(g))
         h.dataset.tgTip = g.name
-        const count = subtree(g.name).length
+        const count = subtree(g.id).length
         const body = '<span class="tg-arrow"></span><span class="tg-text"><span class="tg-name"></span><span class="tg-count"></span></span>'
         h.innerHTML = depth ? `<div class="tg-inner">${body}</div>` : body
         const arrow = h.querySelector('.tg-arrow')
@@ -883,18 +921,18 @@ function install (injector) {
         }
         const countEl = h.querySelector('.tg-count')
         countEl.textContent = `${count} ${count === 1 ? 'tab' : 'tabs'}`
-        const needs = subtree(g.name).filter(t => t.__tgInfo?.agent?.needsYou).length
-        const busy = subtree(g.name).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length
+        const needs = subtree(g.id).filter(t => t.__tgInfo?.agent?.needsYou).length
+        const busy = subtree(g.id).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length
         const roll = [needs && `${needs} ${needs === 1 ? 'needs' : 'need'} you`, busy && `${busy} busy`].filter(Boolean).join(' · ')
-        const asks = subtree(g.name).filter(t => t.__tgInfo?.agent?.asking).length
+        const asks = subtree(g.id).filter(t => t.__tgInfo?.agent?.asking).length
         if (asks) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-ask', textContent: `${asks} asking` }))
         }
-        const running = subtree(g.name).filter(t => t.__tgInfo?.agent?.background).length
+        const running = subtree(g.id).filter(t => t.__tgInfo?.agent?.background).length
         if (running) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-run', textContent: `${running} running` }))
         }
-        const compacting = subtree(g.name).filter(t => t.__tgInfo?.agent?.compacting).length
+        const compacting = subtree(g.id).filter(t => t.__tgInfo?.agent?.compacting).length
         if (compacting) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-cmp', textContent: `${compacting} compacting` }))
         }
@@ -910,7 +948,7 @@ function install (injector) {
         }
         add.addEventListener('click', e => {
             e.stopPropagation()
-            openViaPlus(g.name)
+            openViaPlus(g.id)
         })
         const nameEl = h.querySelector('.tg-name')
         nameEl.textContent = g.name
@@ -926,7 +964,7 @@ function install (injector) {
             if (e.detail > 1) {
                 return
             }
-            clickTimer = setTimeout(() => setCollapsed(g.name, !shut(g)), 220)
+            clickTimer = setTimeout(() => setCollapsed(g.id, !shut(g)), 220)
         })
         nameEl.addEventListener('dblclick', e => {
             e.stopPropagation()
@@ -947,7 +985,7 @@ function install (injector) {
     }
 
     function startRename (g) {
-        const nameEl = [...document.querySelectorAll('.tg-header')].find(h => h.dataset.group === g.name)?.querySelector('.tg-name')
+        const nameEl = [...document.querySelectorAll('.tg-header')].find(h => h.dataset.group === g.id)?.querySelector('.tg-name')
         if (!nameEl) {
             return
         }
@@ -960,7 +998,7 @@ function install (injector) {
             nameEl.removeEventListener('keydown', onKey)
             nameEl.contentEditable = 'false'
             editing = false
-            if (!commit || !rename(g.name, nameEl.textContent.trim())) {
+            if (!commit || !rename(g.id, nameEl.textContent.trim())) {
                 render()
             }
         }
@@ -1025,7 +1063,7 @@ function install (injector) {
         const chain = row.matches('tab-header') ? chainOf(tabOfRow(row)?.__tg) : chainOf(row.dataset.group)
         const l = list.getBoundingClientRect()
         const depth = Math.floor(Math.min(x - l.left, l.right - x) / gap) - 1
-        return depth < 0 || !chain.length ? null : chain[Math.min(depth, chain.length - 1)].name
+        return depth < 0 || !chain.length ? null : chain[Math.min(depth, chain.length - 1)].id
     }
     document.addEventListener('dblclick', onBarDblClick, true)
 
@@ -1046,7 +1084,7 @@ function install (injector) {
         const above = el => { const b = el?.getBoundingClientRect(); return !!b && b.top + b.height / 2 < e.clientY }
         // A hidden row (a search, a collapsed group) has no height: it goes with the next row that shows.
         const sides = unitsOf(app.tabs, groups, group).map(({ unit, head }) => {
-            const el = app.tabs.includes(unit) ? tabRows[app.tabs.indexOf(head)] : [...bar.querySelectorAll(':scope > .tabs > .tg-header')].find(h => h.dataset.group === unit.name)
+            const el = app.tabs.includes(unit) ? tabRows[app.tabs.indexOf(head)] : [...bar.querySelectorAll(':scope > .tabs > .tg-header')].find(h => h.dataset.group === unit.id)
             return plus || (el?.getBoundingClientRect().height ? above(el) : null)
         })
         for (let k = sides.length - 1; k >= 0; k--) {
@@ -1233,7 +1271,7 @@ function install (injector) {
         const token = await origGetToken.call(this, tab, options)
         const chain = chainOf(tab.__tg)
         if (token && chain.length) {
-            token.tabbyGroup = chain.map(g => ({ name: g.name, color: g.color, collapsed: g.collapsed, pinned: g.pinned }))
+            token.tabbyGroup = chain.map(g => ({ id: g.id, name: g.name, color: g.color, collapsed: g.collapsed, pinned: g.pinned }))
             if (tab.__tgPinned) {
                 token.tabbyPinned = true
             }
@@ -1284,7 +1322,7 @@ function install (injector) {
     const windowsApi = createWindows({ app, injector, core, recovery, top, aim: e => aimAt(e), opened: (tab, intent) => {
         watch(tab)
         // The tab or group aimed at may have gone while the tab opened.
-        if (intent && app.tabs.includes(tab) && (!intent.tab || app.tabs.includes(intent.tab)) && (!intent.group || groups.has(intent.group.name))) {
+        if (intent && app.tabs.includes(tab) && (!intent.tab || app.tabs.includes(intent.tab)) && (!intent.group || groups.has(intent.group.id))) {
             applyDrop(tab, intent)
         }
     }, isDisposed: () => disposed })
@@ -1753,12 +1791,12 @@ function install (injector) {
                 return
             }
             delete tab.__tgRestore
-            path.forEach((p, k) => ensureGroup(p.name, { color: p.color, parent: path[k - 1]?.name ?? null }))
+            const chain = restorePath(groups, path)
             // Joining a group clears a local pin, so the restored one is put back afterwards.
             const localPin = !!tab.__tgPinned
-            addTab(tab, path[path.length - 1].name, { restore: true })
+            addTab(tab, chain.at(-1).id, { restore: true })
             tab.__tgPinned = localPin
-            path.forEach(p => Object.assign(groups.get(p.name), { collapsed: p.collapsed, pinned: !!p.pinned }))
+            chain.forEach((g, k) => Object.assign(g, { collapsed: path[k].collapsed, pinned: !!path[k].pinned }))
         }),
         app.tabsChanged$.subscribe(() => {
             normalize()
@@ -1837,7 +1875,7 @@ function install (injector) {
             return
         }
         const row = rowAt(e.clientX, e.clientY)
-        const own = row && draggedGroup && (row.matches('tab-header') ? inGroup(tabOfRow(row), draggedGroup.name) : chainOf(row.dataset.group).includes(draggedGroup))
+        const own = row && draggedGroup && (row.matches('tab-header') ? inGroup(tabOfRow(row), draggedGroup.id) : chainOf(row.dataset.group).includes(draggedGroup))
         if (row && !row.matches('.cdk-drag-placeholder') && !own) {
             const r = row.getBoundingClientRect()
             const f = (e.clientY - r.top) / r.height
@@ -1987,7 +2025,7 @@ function install (injector) {
 
     /** A drop on the free space below the rows lands where its mark shows: above the empty groups at the list's end. */
     function endsAbove (skip, unit) {
-        ;[...groups.values()].filter(e => e !== unit && panelOf(groups, e) === null && !subtree(e.name).length && whereEmptyShows(e, skip)[1])
+        ;[...groups.values()].filter(e => e !== unit && panelOf(groups, e) === null && !subtree(e.id).length && whereEmptyShows(e, skip)[1])
             .forEach(e => follow(marks, e, unit))
     }
 
@@ -1997,14 +2035,14 @@ function install (injector) {
             chainOf(name).forEach(g => { g.collapsed = false })
         }
         const place = (anchor, after) => placeTab(tab, anchor, after)
-        const others = g => subtree(g.name).filter(t => t !== tab)
+        const others = g => subtree(g.id).filter(t => t !== tab)
         if (i.where === 'onto') {
             // Two tabs make a new group: at the top level, or as a subgroup where the target tab is.
-            const g = ensureGroup(newGroupName(), { parent: i.tab.__tg ?? null })
+            const g = createGroup(newGroupName(), i.tab.__tg ?? null)
             // A new top-level group made on a pinned tab stays pinned, so the tab keeps its pin.
             g.pinned = !g.parent && !!i.tab.pinned
-            i.tab.__tg = g.name
-            join(g.name)
+            i.tab.__tg = g.id
+            join(g.id)
             place(i.tab, true)
         } else if (i.tab) {
             join(i.tab.__tg ?? null)
@@ -2015,7 +2053,7 @@ function install (injector) {
             join(null)
             place(app.tabs.at(-1), true)
         } else if (i.where === 'first' || i.where === 'above') {
-            join(i.where === 'first' ? i.group.name : i.group.parent)
+            join(i.where === 'first' ? i.group.id : i.group.parent)
             const first = others(i.group)[0]
             first ? place(first, false) : place(...whereEmptyShows(i.group, [tab]))
             // Above an empty group: it now follows this tab.
@@ -2023,7 +2061,7 @@ function install (injector) {
                 follow(marks, i.group, tab)
             }
         } else {
-            join(i.where === 'last' ? i.group.name : i.group.parent)
+            join(i.where === 'last' ? i.group.id : i.group.parent)
             const last = others(i.group).at(-1)
             last ? place(last, true) : place(...whereEmptyShows(i.group, [tab]))
         }
@@ -2070,7 +2108,7 @@ function install (injector) {
             const swallow = ev => ev.stopPropagation()
             document.addEventListener('click', swallow, true)
             setTimeout(() => document.removeEventListener('click', swallow, true))
-            if (i && groups.has(g.name)) {
+            if (i && groups.has(g.id)) {
                 applyGroupDrop(g, i)
             }
         }
@@ -2086,18 +2124,18 @@ function install (injector) {
      */
     function drop (source, target, where) {
         const tabOf = x => x && x.group === undefined && app.tabs.includes(top(x)) ? top(x) : null
-        const g = source?.group !== undefined ? groups.get(source.group) : null
+        const g = source?.group !== undefined ? groups.get(resolve(groups, source.group)) : null
         const tab = tabOf(source)
-        const tg = target?.group !== undefined ? groups.get(target.group) : null
+        const tg = target?.group !== undefined ? groups.get(resolve(groups, target.group)) : null
         const tt = tabOf(target)
         if ((!g && !tab) || (!tg && !tt)) {
             return false
         }
         if (tt) {
-            if (tt === tab || !['before', 'after', 'onto'].includes(where) || (where === 'onto' && g) || (g && inGroup(tt, g.name))) {
+            if (tt === tab || !['before', 'after', 'onto'].includes(where) || (where === 'onto' && g) || (g && inGroup(tt, g.id))) {
                 return false
             }
-        } else if (!['above', 'first', 'last', 'below'].includes(where) || (g && chainOf(tg.name).includes(g))) {
+        } else if (!['above', 'first', 'last', 'below'].includes(where) || (g && chainOf(tg.id).includes(g))) {
             return false
         }
         const i = tt ? { tab: tt, where } : { group: tg, where }
@@ -2114,10 +2152,10 @@ function install (injector) {
             [parent, anchor, after] = [null, app.tabs.filter(t => !ms.includes(t)).at(-1), true]
             endsAbove(ms, g)
         } else {
-            const rest = subtree(i.group.name).filter(t => !ms.includes(t))
+            const rest = subtree(i.group.id).filter(t => !ms.includes(t))
             const inside = i.where === 'first' || i.where === 'last'
             after = i.where === 'last' || i.where === 'below'
-            parent = inside ? i.group.name : i.group.parent
+            parent = inside ? i.group.id : i.group.parent
             anchor = after ? rest.at(-1) : rest[0]
             if (!rest.length) {
                 [anchor, after] = whereEmptyShows(i.group, ms)
@@ -2127,7 +2165,7 @@ function install (injector) {
                 }
             }
         }
-        if (!setParent(g.name, parent, false)) {
+        if (!setParent(g.id, parent, false)) {
             return
         }
         chainOf(parent).forEach(a => { a.collapsed = false })
@@ -2227,6 +2265,8 @@ function install (injector) {
         } else if (!command) {
             ;({ command, args } = await defaultShell() ?? (IS_WIN ? { command: 'powershell.exe', args: ['-NoLogo'] } : { command: process.env.SHELL || '/bin/zsh', args: [] }))
         }
+        // First, so a name that fits several groups throws before a tab opens.
+        const g = group ? groupFor(group, { ...parent !== undefined && { parent }, ...color !== undefined && { color } }) : null
         const inner = await injector.get(core.ProfilesService).openNewTabForProfile(profile ?? {
             type: 'local', name: title ?? command, options: { command, args, cwd, env: {} },
         })
@@ -2234,8 +2274,8 @@ function install (injector) {
         if (title) {
             tab.setCustomTitle(title)
         }
-        if (group) {
-            addTab(tab, group, { ...parent !== undefined && { parent }, ...color !== undefined && { color } })
+        if (g && groups.get(g.id) === g) {
+            addTab(tab, g.id)
         }
         if (run) {
             await shellReady(inner)
@@ -2372,10 +2412,24 @@ function install (injector) {
         const { pane, why } = typeof name === 'string' ? onePane(name, { whole: true }) : { pane: name }
         return pane ? windowsApi.move(pane, to) : { ok: false, why }
     }
-    window.__tabbyGroups = { version: 1, open, addTab, removeTab, setCollapsed, setColor, setPinned, setTabPinned, setParent, rename, ungroup, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
+    // A group is named by its id, a name only one group has, a path ("tooling/maintainers") or { name, parent }.
+    const byRef = f => (ref, ...rest) => {
+        const id = resolve(groups, ref)
+        return id ? f(id, ...rest) : false
+    }
+    const api = {
+        addTab: (tab, group, opts) => addTab(tab, groupFor(group, opts).id),
+        setCollapsed: byRef(setCollapsed), setColor: byRef(setColor), setPinned: byRef(setPinned), rename: byRef(rename), ungroup: byRef(ungroup),
+        deleteGroup: byRef(deleteGroup), closeGroup: byRef(closeGroup),
+        setParent: byRef((id, parent) => {
+            const pid = parent == null || parent === '' ? null : resolve(groups, parent)
+            return pid === null && parent != null && parent !== '' ? false : setParent(id, pid)
+        }),
+    }
+    window.__tabbyGroups = { version: 1, open, ...api, removeTab, setTabPinned, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
         // For tabby-remote's talk between computers; its presence also says this copy refuses non-Claude tabs there.
         sayToClaude: (name, text) => say(name, text, { claudeOnly: true }), tabOf,
-        deleteGroup, closeGroup, placeAfter, move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
+        placeAfter, move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),
         renderSettings: host => userIconsFile && renderSettings(host, userIconsFile, injector.get(core.ProfilesService).getProfiles()) }
     // A reload started from this plugin's result card ends the old copy; this copy tells how it went.
     if (window.__tgAfterReload) {

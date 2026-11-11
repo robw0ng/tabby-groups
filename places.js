@@ -1,12 +1,12 @@
-// Where groups sit among their siblings, with no Tabby: `tabs` is app.tabs (each with its group name in __tg) and
-// `groups` the plugin's Map of groups by name. A panel is the inside of a group (the top level for null). Its units are
+// Where groups sit among their siblings, with no Tabby: `tabs` is app.tabs (each with its group id in __tg) and
+// `groups` the plugin's Map of groups by id. A panel is the inside of a group (the top level for null). Its units are
 // its direct tabs and its subgroups that have tabs, in list order. An empty group has no tab to sit on, so it keeps a
 // slot: the number of units before it in its panel (none, or past the last unit, puts it at the panel's end).
 
 /** The group and its ancestors, root first. */
-function chainIn (groups, name) {
+function chainIn (groups, id) {
     const chain = []
-    for (let g = groups.get(name); g; g = groups.get(g.parent)) {
+    for (let g = groups.get(id); g; g = groups.get(g.parent)) {
         chain.unshift(g)
     }
     return chain
@@ -44,7 +44,7 @@ function emptyIndex (tabs, groups, g, skip = []) {
             return tabs.indexOf(t)
         }
     }
-    const last = tabs.filter(t => !skip.includes(t) && (panel === null || chainIn(groups, t.__tg).some(a => a.name === panel))).at(-1)
+    const last = tabs.filter(t => !skip.includes(t) && (panel === null || chainIn(groups, t.__tg).some(a => a.id === panel))).at(-1)
     if (last) {
         return tabs.indexOf(last) + 1
     }
@@ -56,7 +56,7 @@ function groupOrder (tabs, groups, panel = null) {
     const units = unitsOf(tabs, groups, panel).map(u => u.unit)
     const empties = [...groups.values()].filter(g => panelOf(groups, g) === panel && !units.includes(g))
     const out = []
-    const emit = g => out.push(g, ...groupOrder(tabs, groups, g.name))
+    const emit = g => out.push(g, ...groupOrder(tabs, groups, g.id))
     const upTo = k => empties.filter(g => !out.includes(g) && (g.slot ?? Infinity) <= k).forEach(emit)
     units.forEach((u, k) => {
         upTo(k)

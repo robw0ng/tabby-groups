@@ -58,11 +58,11 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 
 ## Scripting
 
-Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window. The Claude Code plugin's `scripts/tabby-eval.mjs` runs a JavaScript file inside Tabby through its DevTools port and prints the result as JSON, with no shell quoting (`node claude/scripts/tabby-eval.test.mjs --port <test Tabby port>` checks it). The functions:
+Other tools can drive the groups through `window.__tabbyGroups` in Tabby's window. The Claude Code plugin's `scripts/tabby-eval.mjs` runs a JavaScript file inside Tabby through its DevTools port and prints the result as JSON, with no shell quoting (`node claude/scripts/tabby-eval.test.mjs --port <test Tabby port>` checks it). A group is named by its id (from `list()`), a name only one group has, a path such as `"tooling/maintainers"`, or `{ name, parent }`. Names are unique only among the groups with the same parent: a new, renamed or moved group whose name a sibling has becomes "name (1)", the lowest free number; a bare name that fits several groups throws an error that asks for the path. The functions:
 
 | Function | Does |
 | --- | --- |
-| `open({ title, command, args, cwd, run, group, parent, color })` | Opens a shell tab in a group and types `run` once the shell is ready |
+| `open({ title, command, args, cwd, run, group, parent, color })` | Opens a shell tab in a group and types `run` once the shell is ready. With `parent`, the group is the child of that name in the parent, made when missing (the parent too) |
 | `addTab(tab, group, { color, parent })` / `removeTab(tab)` | Puts a tab in a group, or takes it out |
 | `setCollapsed`, `setColor`, `setPinned`, `setParent`, `rename`, `ungroup` | Change a group |
 | `deleteGroup(name)` | Deletes an empty group and its (empty) subgroups. Returns false for a group with a tab under it. |
@@ -70,7 +70,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `placeAfter(newTab, fromTab)` | For a tab opened from another tab (a Files tab from a shell): files `newTab` in `fromTab`'s group and moves it right after `fromTab`; at the top level when `fromTab` has no group (after Tabby's pinned tabs, if `fromTab` is one; the new tab is not pinned). Either can be a pane of a split tab. Returns false when either tab is not open, or both are the same tab. |
 | `setTabPinned(tab, pinned)` | Pins a tab inside its group |
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
-| `list()` | All groups in side-bar order, with their tabs and Claude Code counts |
+| `list()` | All groups in side-bar order: `id`, `name`, `path`, `parent` (the parent's name), `parentId`, colour, pin, fold, their tabs and Claude Code counts |
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
 | `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the one tab `name` names (as `say`: a title, else a part of one, or `#<n>`), as plain text. Read-only. Null when none or several match, or for a restored tab that was not opened yet. CLI: `claude/scripts/tab-read.mjs`. |
 | `say(name, text, { caller })` | Types `text` into the one tab titled `name` (else the one whose title contains it) and presses Enter, without focusing it. Refuses no match, more than one match, a tab not opened yet, and the tab with the `caller` pid under its shell. Returns `{ ok, why }`. |
@@ -95,6 +95,7 @@ Plain JavaScript with no build step and no dependencies: Tabby loads `index.js`,
 | `agent.js`, `inbox.js` | A Claude tab's state (busy, asking, compacting) and its message inbox, from the tab title and the files the Claude Code hooks write |
 | `processes.js`, `resume.js` | What runs in a tab and in which folder; the command that resumes a Claude Code or Codex session |
 | `places.js` | Where an empty group sits among its siblings |
+| `scope.js` | Group ids, names unique among siblings, lookup by name or path, and the migration of groups saved by name |
 | `picker.js`, `buttons.js`, `settings.js` | The new-tab picker, the user's toolbar buttons, the settings page |
 | `styles.js`, `icons.js`, `tooltip.js` | The look |
 | `claude/` | The Claude Code plugin: the `tabby` skill, its scripts and the hooks |
@@ -130,6 +131,7 @@ Checks that every Claude Code hook ends by itself while its stdin stays open: wi
 ```sh
 node test-picker.js
 node test-places.js
+node test-scope.js
 node claude/scripts/picker.e2e.mjs --port <a test Tabby's DevTools port>
 ```
 

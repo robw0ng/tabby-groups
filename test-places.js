@@ -3,7 +3,7 @@ const assert = require('assert')
 const { unitsOf, emptyIndex, groupOrder, trackSlots } = require('./places')
 
 const tab = (name, group) => ({ name, __tg: group })
-const mk = (...gs) => new Map(gs.map(g => [g.name, { parent: null, ...g }]))
+const mk = (...gs) => new Map(gs.map(g => [g.name, { parent: null, id: g.name, ...g }]))
 const names = xs => xs.map(x => x.name)
 
 // Top level: loose a, group G (g1, g2), loose b. Empty E sits after the first unit, empty S at the end of G.

@@ -65,12 +65,15 @@ const inTabby = (fn, input) => `(async () => {
 
 const open = async (app, profiles, groupOf, o) => {
   const tg = window.__tabbyGroups;
-  // --parent places a new group only: a launch never moves a group that exists (it could even ask for a loop).
-  const existing = tg?.version >= 1 ? tg.list().find((g) => g.name === o.group) : null;
-  const parent = o.parent && !existing ? { parent: o.parent } : {};
-  const note = o.parent && existing && existing.parent !== o.parent ? { warning: `group "${o.group}" exists (parent: ${existing.parent ?? 'none'}), so --parent ${o.parent} was ignored` }
-    : o.parent && !existing && tg?.version >= 1 && !tg.list().some((g) => g.name === o.parent) ? { warning: `parent group "${o.parent}" did not exist in this window, so it was created` }
-    : {};
+  // Group names are unique only among siblings: --parent picks the group of that name inside the parent (a name or a
+  // path), made when missing; without it, --group is a name only one group has, or a path such as "tooling/maintainers".
+  // A launch never moves a group that exists.
+  const named = (g, ref) => g.name === ref || g.path === ref;
+  const parentId = o.parent && tg?.version >= 1 ? tg.list().find((g) => named(g, o.parent))?.id : null;
+  const existing = tg?.version >= 1 ? tg.list().find((g) => o.parent ? g.name === o.group && !!parentId && g.parentId === parentId : named(g, o.group)) : null;
+  const parent = o.parent ? { parent: o.parent } : {};
+  const note = o.parent && tg?.version >= 1 && !tg.list().some((g) => named(g, o.parent)) ? { warning: `parent group "${o.parent}" did not exist in this window, so it was created` } : {};
+  const groupOfTab = (tab) => tg.list().find((x) => x.id === tab?.__tg);
   // The plugin's open fails before it types the command: close the bare shell it left, so a fallback gives one session.
   const tgOpen = async (opts) => {
     const before = new Set(app.tabs);
@@ -85,13 +88,13 @@ const open = async (app, profiles, groupOf, o) => {
     if (!(tg?.version >= 1)) throw new Error('open without --file needs the tabby-groups Tabby plugin');
     // The plugin's open uses Tabby's default profile and types --run once the shell is ready.
     const n = await tgOpen({ title: o.name, cwd: o.dir, run: o.run, group: o.group, ...parent });
-    const g = tg.list().find((x) => x.name === o.group);
+    const g = groupOfTab(app.tabs[n - 1]);
     return { tab: o.name, group: o.group, parent: g?.parent ?? null, color: g?.color, index: n - 1, groupSize: g?.tabs.length, plugin: true, ...note };
   }
   const palette = ['#f2756a', '#8ef58a', '#fdffad', '#86b7f7', '#f48cf6', '#d7cff9']; // the tabby-groups plugin's palette
   let h = 0; for (const c of o.group) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   // A new subgroup never takes its parent's colour, or the two panels melt into one.
-  const parentColor = o.parent ? window.__tabbyGroups?.list().find((g) => g.name === o.parent)?.color : null;
+  const parentColor = o.parent ? window.__tabbyGroups?.list().find((g) => g.name === o.parent || g.path === o.parent)?.color : null;
   const color = palette[h % palette.length] === parentColor ? palette[(h + 1) % palette.length] : palette[h % palette.length];
   const mine = app.tabs.filter((t) => groupOf(t) === o.group || (!groupOf(t) && t.color === color));
   // A .ps1 launch script runs in PowerShell 7, by the full path Tabby found for its own profile (so Tabby's PATH does not
@@ -112,7 +115,7 @@ const open = async (app, profiles, groupOf, o) => {
     const n = await tgOpen({ title: o.name, cwd: o.dir, ...shell, group: o.group, ...existing ? {} : { color }, ...parent });
     const tab = app.tabs[n - 1];
     if (ownTitle) tab.setCustomTitle(''); // hand the title back to the app
-    const g = tg.list().find((x) => x.name === o.group);
+    const g = groupOfTab(tab);
     return { tab: o.name, group: o.group, parent: g.parent ?? null, color: g.color, index: app.tabs.indexOf(tab), groupSize: g.tabs.length, plugin: true, ...note };
   }
   if (!ps1) throw new Error('a launch script other than .ps1 needs the tabby-groups Tabby plugin');
@@ -158,7 +161,7 @@ const move = async (app, profiles, groupOf, o) => {
   if (!tab) throw new Error(`no tab "${o.tab}"`);
   if (o.none) tg.removeTab(tab);
   else tg.addTab(tab, o.group, o.parent ? { parent: o.parent } : {});
-  return { tab: title(tab), group: tab.__tg ?? null, index: app.tabs.indexOf(tab) };
+  return { tab: title(tab), group: tg.list().find((g) => g.id === tab.__tg)?.path ?? null, index: app.tabs.indexOf(tab) };
 };
 
 const input = { group: opt('group'), name: opt('name'), dir: opt('dir'), file: opt('file'), app: opt('app', 'shell'), run: opt('run'), parent: opt('parent'), tab: opt('tab'), none: flag('none'), window: opt('window') };

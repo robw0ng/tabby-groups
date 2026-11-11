@@ -44,7 +44,7 @@ const APP = `require('@angular/core').ɵgetLContext(document.querySelector('app-
 const state = () => run(`() => {
   const app = ${APP};
   return { picker: !!document.querySelector('.tg-picker'), rows: [...document.querySelectorAll('.tg-picker .tg-item')].map(e => e.lastChild.textContent),
-    tabs: app.tabs.map(t => ({ title: t.customTitle || t.title, group: t.__tg ?? null })), menu: !!document.querySelector('.tg-menu:not(.tg-picker)') }
+    tabs: app.tabs.map(t => ({ title: t.customTitle || t.title, group: window.__tabbyGroups.list().find(g => g.id === t.__tg)?.name ?? null })), menu: !!document.querySelector('.tg-menu:not(.tg-picker)') }
 }`);
 // Points in the side bar: a tab row, a group header, the inner group's footer, and the free space below the rows.
 const points = () => run(`() => {
@@ -52,7 +52,7 @@ const points = () => run(`() => {
   const list = document.querySelector('.tab-bar .tabs');
   const l = list.getBoundingClientRect();
   return { tab: mid(list.querySelector(':scope > tab-header')), header: mid(list.querySelector('.tg-header')),
-    foot: mid(list.querySelector('.tg-foot[data-group="inner"]')), free: { x: l.left + l.width / 2, y: l.bottom + 30 } };
+    foot: mid(list.querySelector('.tg-foot[data-name="inner"]')), free: { x: l.left + l.width / 2, y: l.bottom + 30 } };
 }`);
 
 // Setup: a loose tab, then outer > inner with one tab each; the last row is in a group.
@@ -123,7 +123,7 @@ s = await state();
 check('a group\'s space opens the tab in that group', s.tabs.length === before + 1 && s.tabs.filter((t) => t.group === 'inner').length === 2, s.tabs);
 
 // A group header's "+": right-click opens the picker for that group (not the group menu); left-click is as before.
-const plusAt = () => run(`() => { const b = document.querySelector('.tg-header[data-group="outer"] .tg-add'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }`);
+const plusAt = () => run(`() => { const b = document.querySelector('.tg-header[data-name="outer"] .tg-add'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }`);
 const inOuter = (tabs) => tabs.filter((t) => t.group === 'outer').length;
 let plus = await plusAt();
 await rightClick(plus);
@@ -167,15 +167,15 @@ await call('Input.insertText', { text: 'empty-e2e' });
 await key('Enter');
 made = (await groupsNow()).find((g) => g.name === 'empty-e2e');
 check('it keeps its new name and stays with no tab', made?.tabs === 0);
-const emptyRow = `.tg-empty[data-group="empty-e2e"]`;
+const emptyRow = `.tg-empty[data-name="empty-e2e"]`;
 const emptyText = await run(`(sel) => document.querySelector(sel)?.textContent`, emptyRow);
-check('it shows its header, its +, and a muted "Empty" row', !!(await center(`.tg-header[data-group="empty-e2e"] .tg-add`)) && emptyText === 'Empty', emptyText);
+check('it shows its header, its +, and a muted "Empty" row', !!(await center(`.tg-header[data-name="empty-e2e"] .tg-add`)) && emptyText === 'Empty', emptyText);
 
 await rightClick(await center(emptyRow));
 s = await state();
 check('right-click on its "Empty" row offers a subgroup', s.rows.some((r) => r.includes('New empty subgroup')), s.rows);
 await key('Escape');
-await rightClick(await center(`.tg-header[data-group="empty-e2e"] .tg-add`));
+await rightClick(await center(`.tg-header[data-name="empty-e2e"] .tg-add`));
 s = await state();
 check('right-click on its + offers a subgroup', s.rows.some((r) => r.includes('New empty subgroup')), s.rows);
 await pickRow('New empty subgroup');
@@ -205,7 +205,7 @@ check('a tab dragged onto the empty row joins the group', s.tabs.find((t) => t.t
 await run(`() => { const app = ${APP}; window.__tabbyGroups.removeTab(app.tabs.find(t => (t.customTitle || t.title) === 'loose')) }`);
 await sleep(500);
 check('emptied by moving its last tab out, it stays', (await groupsNow()).some((g) => g.name === 'empty-e2e'));
-await rightClick(await center(`.tg-header[data-group="empty-e2e"]`));
+await rightClick(await center(`.tg-header[data-name="empty-e2e"]`));
 const del = await run(`() => { const i = [...document.querySelectorAll('.tg-menu .tg-item')].find(e => e.textContent === 'Delete group'); i?.click(); return !!i }`);
 await sleep(500);
 const left = (await groupsNow()).map((g) => g.name);
@@ -224,7 +224,7 @@ const placed = await run(`async () => {
   const byTitle = t => app.tabs.find(x => (x.customTitle || x.title) === t);
   const where = (title, from) => {
     const tab = byTitle(title);
-    return { group: tab.__tg ?? null, right: app.tabs.indexOf(tab) === app.tabs.indexOf(byTitle(from)) + 1 };
+    return { group: tg.list().find(g => g.id === tab.__tg)?.name ?? null, right: app.tabs.indexOf(tab) === app.tabs.indexOf(byTitle(from)) + 1 };
   };
   await tg.open({ title: 'after-o1' });
   const out = { inGroup: { ok: tg.placeAfter(byTitle('after-o1'), byTitle('o1')), ...where('after-o1', 'o1') } };
@@ -257,7 +257,7 @@ await escDrag(await rowCenter(0), await rowCenter(2));
 check('Esc during a tab drag onto another tab: nothing moves or groups', (await layout()) === was && !(await run(`() => !!document.querySelector('.tg-drop-line, .tg-drop-onto')`)), JSON.parse(await layout()));
 was = await layout();
 p = await points();
-await escDrag(await center('.tg-header[data-group="outer"]'), p.free);
+await escDrag(await center('.tg-header[data-name="outer"]'), p.free);
 check('Esc during a group header drag: the group stays', (await layout()) === was, JSON.parse(await layout()));
 // Onto the terminal (Tabby's split zones): no split. The pane counts show one.
 const panes = () => run(`() => ${APP}.tabs.map(t => t.getAllTabs?.().length ?? 1).join(',')`);
@@ -280,11 +280,11 @@ await sleep(2500);
 await run(`async () => { const app = ${APP}; await app.closeTab(app.tabs.find(t => (t.customTitle || t.title) === 'm1'), false, true) }`);
 await sleep(800);
 await tabRow('tail');
-check('a group emptied by closing its last tab stays where it was, above the tab after it', await follows('.tg-header[data-group="mid"]', 'tab-header[data-e2e="tail"]'), await groupsNow());
+check('a group emptied by closing its last tab stays where it was, above the tab after it', await follows('.tg-header[data-name="mid"]', 'tab-header[data-e2e="tail"]'), await groupsNow());
 const midStored = await run(`() => JSON.parse(localStorage.getItem('tabby-groups:empty-groups') ?? '[]').find(g => g.name === 'mid')`);
 check('its place is stored for a restart', typeof midStored?.slot === 'number', midStored);
 // A right-click in outer's side band beside inner's tab: the new subgroup of outer goes right after inner.
-const band = await run(`() => { const app = ${APP}; const list = document.querySelector('.tab-bar .tabs'); const row = document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.findIndex(t => t.__tg === 'inner')]; const r = row.getBoundingClientRect(); const y = r.top + r.height / 2; for (let x = list.getBoundingClientRect().left + 1; x < r.left + r.width / 2; x++) { if (document.elementFromPoint(x, y) === list) return { x, y } } return null }`);
+const band = await run(`() => { const app = ${APP}; const list = document.querySelector('.tab-bar .tabs'); const row = document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.findIndex(t => window.__tabbyGroups.list().find(g => g.id === t.__tg)?.name === 'inner')]; const r = row.getBoundingClientRect(); const y = r.top + r.height / 2; for (let x = list.getBoundingClientRect().left + 1; x < r.left + r.width / 2; x++) { if (document.elementFromPoint(x, y) === list) return { x, y } } return null }`);
 const before2 = new Set((await groupsNow()).map((g) => g.name));
 if (band) {
   await rightClick(band);
@@ -293,7 +293,7 @@ if (band) {
 }
 const spot = (await groupsNow()).find((g) => !before2.has(g.name));
 check('a new empty subgroup made by a right-click in a band shows right after the unit above the click', spot?.parent === 'outer'
-  && await run(`(n) => document.querySelector('.tg-header[data-group="' + n + '"]')?.previousElementSibling?.matches('.tg-foot[data-group="inner"]')`, spot.name), { band, spot });
+  && await run(`(n) => document.querySelector('.tg-header[data-name="' + n + '"]')?.previousElementSibling?.matches('.tg-foot[data-name="inner"]')`, spot.name), { band, spot });
 const order = await run(`() => window.__tabbyGroups.list().filter(g => g.parent === 'outer').map(g => g.name)`);
 check('list() keeps the side-bar order', order.indexOf(spot?.name) === order.indexOf('inner') + 1, order);
 
@@ -305,7 +305,7 @@ await run(`async () => { const tg = window.__tabbyGroups; await tg.open({ title:
 await sleep(2500);
 // Tabby keeps the last 5 closed tabs, so the check is that the newest 3 are new, not that the stack grew.
 await run(`() => { window.__tgStack0 = [...${APP}.closedTabsStack] }`);
-await rightClick(await center('.tg-header[data-group="closeme"]'));
+await rightClick(await center('.tg-header[data-name="closeme"]'));
 const closeItem = await run(`() => { const i = [...document.querySelectorAll('.tg-menu .tg-item')].find(e => e.textContent === 'Close group'); i?.click(); return !!i }`);
 await sleep(2000);
 s = await state();
@@ -346,12 +346,40 @@ s = await state();
 check('in a 2-tab group, a tab dragged onto the other makes a subgroup of both, and the group stays', ontoMark && twoSub?.tabs === 2
   && s.tabs.filter((t) => ['two1', 'two2'].includes(t.title)).every((t) => t.group === twoSub.name) && (await groupsNow()).some((g) => g.name === 'two'), { ontoMark, groups: await groupsNow() });
 
+// Names are unique among siblings only: two "owners" under different parents; a move next to a same-named sibling adds " (1)".
+const scoped = await run(`async () => {
+  const tg = window.__tabbyGroups;
+  await tg.open({ title: 'ow1', group: 'owners', parent: 'tooling' });
+  await tg.open({ title: 'ow2', group: 'owners', parent: 'web' });
+  const both = tg.list().filter(g => g.name === 'owners').map(g => g.path).sort();
+  let ambiguous = null;
+  try { tg.closeGroup('owners') } catch (e) { ambiguous = e.message }
+  const moved = tg.setParent('web/owners', 'tooling');
+  const afterMove = tg.list().filter(g => g.parent === 'tooling').map(g => g.name).sort();
+  tg.rename('tooling/owners', 'leads');
+  tg.rename('tooling/owners (1)', 'owners');
+  const afterRename = tg.list().filter(g => g.parent === 'tooling').map(g => g.name).sort();
+  const g = tg.list().find(x => x.path === 'tooling/owners');
+  return { both, ambiguous, moved, afterMove, afterRename, hasId: !!g?.id && g.parentId === tg.list().find(x => x.path === 'tooling')?.id };
+}`);
+await sleep(1000);
+check('two groups named "owners" under different parents', JSON.stringify(scoped.both) === JSON.stringify(['tooling/owners', 'web/owners']), scoped);
+check('a bare name that fits two groups is refused, asking for the path', /give its path/.test(scoped.ambiguous ?? ''), scoped);
+check('a move next to a same-named sibling becomes "owners (1)"', scoped.moved && JSON.stringify(scoped.afterMove) === JSON.stringify(['owners', 'owners (1)']), scoped);
+check('renaming back to a free name drops the suffix', JSON.stringify(scoped.afterRename) === JSON.stringify(['leads', 'owners']), scoped);
+check('list() gives id, parentId and path', scoped.hasId, scoped);
+const shown = await run(`() => [...document.querySelectorAll('.tg-header')].filter(h => h.dataset.name === 'owners' || h.dataset.name === 'leads').length`);
+check('both show in the side bar', shown === 2, shown);
+const closed2 = await run(`async () => { const tg = window.__tabbyGroups; const r = await tg.closeGroup('tooling'); await tg.closeGroup('web'); return r }`);
+await sleep(1000);
+check('closeGroup takes a name or a path; the groups go', closed2 === true && !(await groupsNow()).some((g) => ['tooling', 'web', 'owners', 'leads'].includes(g.name)), await groupsNow());
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
 check('right-click on a tab opens no picker', !s.picker);
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

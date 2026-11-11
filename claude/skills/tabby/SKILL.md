@@ -19,7 +19,7 @@ Run the script with Node 22 or later. Its path is `scripts/tabby.mjs` in this pl
 node <plugin>/scripts/tabby.mjs list
 ```
 
-Each group has `name`, `parent`, `color`, `collapsed`, `pinned`, `tabs` (`title`, 0-based `index`), and `needsYou` / `busy` counts of Claude Code tabs. A tab's number in the side bar is `index + 1`.
+Each group has `id`, `name`, `path` (for example `tooling/owners`), `parent` (the parent's name), `parentId`, `color`, `collapsed`, `pinned`, `tabs` (`title`, 0-based `index`), and `needsYou` / `busy` counts of Claude Code tabs. A tab's number in the side bar is `index + 1`.
 
 ## Open a tab in a group
 
@@ -30,11 +30,11 @@ node <plugin>/scripts/tabby.mjs open --group "<group>" --name "<tab title>" --di
 | Option | Use |
 | --- | --- |
 | `--run "<command>"` | Typed into the new shell once it is ready, for example `claude`, `claude --resume <name>` or `npm test`. Leave it out for a plain shell. |
-| `--parent "<group>"` | Makes `--group` a subgroup of this group |
+| `--parent "<group>"` | Uses the subgroup called `--group` inside this group (a name or a path), made when missing; the parent is made too |
 | `--file <script>` | Runs a launch script once in a new shell (launchers use this). A `.ps1` script runs in PowerShell 7; any other script is sourced in the default profile's shell, for example zsh on macOS. |
 | `--app claude` | With `--file`: the app names its own tab |
 
-The group is created when it does not exist. The shell is the user's Tabby default profile.
+The group is created when it does not exist. Group names are unique only among the groups with the same parent: where two groups share a name, give `--group` as a path (`tooling/owners`) or add `--parent`. The shell is the user's Tabby default profile.
 
 With several Tabby windows, every script acts on the window whose tab runs you (else the focused window). `open` and `list` report it as `window: { index, count, by }`; `by` is `only`, `caller`, `focused` or `first`. Tell the user which window when `by` is not `only` or `caller`.
 
@@ -70,7 +70,7 @@ The file is the body of an async function. It gets `{ app, injector, core, tg, a
 
 ```js
 // tabs.js: the title and group of every tab
-return app.tabs.map((t, i) => ({ n: i + 1, title: t.customTitle || t.title, group: t.__tg ?? null }))
+return app.tabs.map((t, i) => ({ n: i + 1, title: t.customTitle || t.title, group: tg?.list().find(g => g.id === t.__tg)?.path ?? null }))
 ```
 
 The exit codes are the same as `tabby.mjs`. The file is JavaScript, so write a backslash as `\\`.
