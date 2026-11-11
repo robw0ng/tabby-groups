@@ -1845,9 +1845,7 @@ function install (injector) {
                 const tab = tabOfRow(row)
                 if (tab && tab !== draggedTab) {
                     // A group dropped on a tab goes next to it; no folder of a group and a tab.
-                    // A subgroup needs a tab of its own beside it in the parent, or the parent would hold nothing but the subgroup.
-                    const lone = tab.__tg && !members(tab.__tg).some(t => t !== tab && t !== draggedTab)
-                    const where = draggedGroup || lone ? (f < 0.5 ? 'before' : 'after') : f < 0.25 ? 'before' : f > 0.75 ? 'after' : 'onto'
+                    const where = draggedGroup ? (f < 0.5 ? 'before' : 'after') : f < 0.25 ? 'before' : f > 0.75 ? 'after' : 'onto'
                     dropIntent = { row, tab, where }
                 }
             } else if (groups.has(row.dataset.group)) {
@@ -2096,8 +2094,7 @@ function install (injector) {
             return false
         }
         if (tt) {
-            const lone = tt.__tg && !members(tt.__tg).some(t => t !== tt && t !== tab)
-            if (tt === tab || !['before', 'after', 'onto'].includes(where) || (where === 'onto' && (g || lone)) || (g && inGroup(tt, g.name))) {
+            if (tt === tab || !['before', 'after', 'onto'].includes(where) || (where === 'onto' && g) || (g && inGroup(tt, g.name))) {
                 return false
             }
         } else if (!['above', 'first', 'last', 'below'].includes(where) || (g && chainOf(tg.name).includes(g))) {

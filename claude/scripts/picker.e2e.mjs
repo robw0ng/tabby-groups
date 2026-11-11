@@ -326,6 +326,26 @@ check('Close closes the pinned and the busy tab too', closed === true && !(await
 await run(`() => { const core = require('tabby-core'); const p = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9].get(core.PlatformService); p.showMessageBox = p.__tgReal; delete p.__tgReal }`);
 p = await points();
 
+// A group with exactly 2 tabs: dragging one onto the other makes a subgroup of both; the group stays, holding it.
+await run(`async () => { const tg = window.__tabbyGroups; await tg.open({ title: 'two1', group: 'two' }); await tg.open({ title: 'two2', group: 'two' }) }`);
+await sleep(2500);
+const rowOf = (title) => run(`(title) => { const app = ${APP}; const r = document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.findIndex(t => (t.customTitle || t.title) === title)].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }`, title);
+const fromTwo = await rowOf('two2');
+const toTwo = await rowOf('two1');
+await mouse('mousePressed', fromTwo, 1);
+for (let k = 1; k <= 20; k++) {
+  await mouse('mouseMoved', { x: fromTwo.x + (toTwo.x - fromTwo.x) * k / 20, y: fromTwo.y + (toTwo.y - fromTwo.y) * k / 20 }, 1);
+  await sleep(25);
+}
+await sleep(300);
+const ontoMark = await run(`() => !!document.querySelector('.tg-drop-onto')`);
+await mouse('mouseReleased', toTwo, 0);
+await sleep(1000);
+const twoSub = (await groupsNow()).find((g) => g.parent === 'two');
+s = await state();
+check('in a 2-tab group, a tab dragged onto the other makes a subgroup of both, and the group stays', ontoMark && twoSub?.tabs === 2
+  && s.tabs.filter((t) => ['two1', 'two2'].includes(t.title)).every((t) => t.group === twoSub.name) && (await groupsNow()).some((g) => g.name === 'two'), { ontoMark, groups: await groupsNow() });
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
