@@ -751,6 +751,31 @@ function install (injector) {
             top.append(topButtonsEl)
         }
     }
+    // Tabby builds its toolbar after config loads, maybe after the first render, and rebuilds the side bar (fullscreen), so
+    // the buttons are placed again whenever nodes land in the tab bar's button rows (not its tab list): once a frame at most.
+    let topQueued = false
+    const queueTopButtons = () => {
+        if (!topQueued) {
+            topQueued = true
+            requestAnimationFrame(() => {
+                topQueued = false
+                if (!disposed) {
+                    mountTopButtons(!!document.querySelector('.tabs-on-left, .tabs-on-right'))
+                }
+            })
+        }
+    }
+    // Nodes added in the bar's rows, or a whole new bar; terminal output (inside tab-body) is skipped first, as it is most of it.
+    const inToolbar = r => r.addedNodes.length && r.target.nodeType === 1 && !r.target.closest('tab-body') && (r.target.closest('.tab-bar')
+        ? !r.target.closest('.tabs')
+        : [...r.addedNodes].some(n => n.nodeType === 1 && (n.matches('.tab-bar') || n.querySelector('.tab-bar'))))
+    const topObserver = new MutationObserver(records => {
+        if (records.some(inToolbar)) {
+            queueTopButtons()
+        }
+    })
+    topObserver.observe(document.body, { childList: true, subtree: true })
+    queueTopButtons()
 
     function render () {
         if (disposed) {
@@ -2367,6 +2392,7 @@ function install (injector) {
         inbox.dispose()
         userIconsWatch?.close()
         buttonBar.dispose()
+        topObserver.disconnect()
         topButtonsEl.remove()
         document.querySelectorAll('.tg-moved').forEach(e => e.classList.remove('tg-moved'))
         windowsApi.dispose()

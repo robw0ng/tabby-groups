@@ -57,6 +57,22 @@ const points = () => run(`() => {
     foot: mid(list.querySelector('.tg-foot[data-name="inner"]')), free: { x: l.left + l.width / 2, y: l.bottom + 30 } };
 }`);
 
+// Right after Tabby starts (run this script then), before any tab opens: every tgTop button (Files, with tabby-files) is in
+// the top row already, and its bottom copy hidden. Placement must not wait for a tab change.
+const topProbe = () => run(`() => ({ top: [...document.querySelectorAll('.tab-bar > .tabs + .btn-group .tg-top-button')].map(b => b.dataset.tgTip), hidden: document.querySelectorAll('.tab-bar > .btn-space + .btn-group > .d-flex.tg-moved').length, marked: ((inj) => inj.get(require('tabby-core').ConfigService).enabledServices(inj.get(require('tabby-core').ToolbarButtonProvider)))(require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9]).flatMap(p => { try { return p.provide() } catch { return [] } }).filter(b => b?.tgTop && (b.weight ?? 0) > 0).length })`);
+// Waits (15 s at most) for Tabby to be ready and its bottom bar built, without opening anything.
+let atStart = { marked: 0 };
+for (let k = 0; k < 30; k++) {
+  try {
+    if (await run(`() => !!document.querySelector('.tab-bar > .btn-space + .btn-group > .d-flex')`)) {
+      await sleep(500);
+      atStart = await topProbe();
+      break;
+    }
+  } catch { }
+  await sleep(500);
+}
+
 // Setup: a loose tab, then outer > inner with one tab each; the last row is in a group.
 await run(`async () => {
   const app = ${APP};
@@ -68,6 +84,7 @@ await run(`async () => {
 await sleep(1500);
 const results = [];
 const check = (name, ok, detail) => results.push({ name, ok: !!ok, detail });
+if (atStart.marked) check('at start, with no tab opened yet: each tgTop button is in the top row and its bottom copy hidden', atStart.top.length === atStart.marked && atStart.hidden === atStart.marked, atStart);
 let p = await points();
 
 const filterHeight = () => run(`() => document.querySelector('.tg-picker-q')?.offsetHeight ?? -1`);
@@ -515,6 +532,20 @@ check('it goes when its plugin no longer provides it', topBtn.goneAfter, topBtn)
 const moved = await run(`() => ({ top: [...document.querySelectorAll('.tab-bar > .tabs + .btn-group .tg-top-button')].map(b => b.dataset.tgTip),
   hidden: document.querySelectorAll('.tab-bar > .btn-space + .btn-group > .d-flex.tg-moved').length })`);
 if (moved.top.length) check('a tgTop button from the start is hidden in the bottom bar (no second copy)', moved.hidden === moved.top.length, moved);
+
+// Tabby rebuilding its bar (simulated: the plugin's buttons and marks gone, a node added in the bottom bar) puts them back
+// through the page watcher alone, with no tab change and no redraw.
+if (atStart.marked) {
+  await run(`() => {
+    document.querySelectorAll('.tg-top-buttons').forEach(e => e.remove());
+    document.querySelectorAll('.tg-moved').forEach(e => e.classList.remove('tg-moved'));
+    document.querySelector('.tab-bar > .btn-space + .btn-group').append(Object.assign(document.createElement('span'), { className: 'tg-e2e-poke' }));
+  }`);
+  await sleep(500);
+  const rebuilt = await topProbe();
+  await run(`() => document.querySelectorAll('.tg-e2e-poke').forEach(e => e.remove())`);
+  check('after Tabby rebuilds its bar, the tgTop buttons are back in the top row and the bottom copies hidden', rebuilt.top.length === rebuilt.marked && rebuilt.hidden === rebuilt.marked, rebuilt);
+}
 
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
