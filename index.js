@@ -2045,7 +2045,8 @@ function install (injector) {
             const buttons = el.querySelector(':scope > .buttons')
             buttons ? buttons.before(box) : el.append(box)
         }
-        const btnsWidth = el.querySelector(':scope > .buttons')?.offsetWidth
+        // Only with a presence box: reading a width forces a layout, and on every row of every redraw that added up.
+        const btnsWidth = box && el.querySelector(':scope > .buttons')?.offsetWidth
         if (box && btnsWidth && box.style.getPropertyValue('--tg-btns') !== btnsWidth + 'px') {
             box.style.setProperty('--tg-btns', btnsWidth + 'px')
         }
