@@ -873,7 +873,7 @@ function install (injector) {
         const scrollTop = scroller?.scrollTop ?? 0
         container.querySelectorAll(':scope > .tg-header, :scope > .tg-foot, :scope > .tg-empty').forEach(e => e.remove())
         const vertical = !!container.closest('.tabs-on-left, .tabs-on-right')
-        container.classList.toggle('tg-light', vertical && isLightBg(getComputedStyle(container).getPropertyValue('--tg-bg')))
+        container.classList.toggle('tg-light', vertical && lightBar(container))
         // The plugin only shapes a side tab bar; with tabs on top or bottom Tabby looks stock, and groups wait in memory.
         setLiveReorder(container, !vertical)
         if (!vertical) {
@@ -1061,6 +1061,25 @@ function install (injector) {
         }
         r.el.style.setProperty('background-color', mix(r.chain[level], pct), 'important')
         r.el.style.setProperty('box-shadow', bands.join(','), 'important')
+    }
+
+    /**
+     * Whether the side bar's background is light, kept per list element: reading the computed colour forces a style
+     * recalc, and it ran on every redraw. A config change (a theme or colour scheme) reads it again once applied.
+     */
+    let lightOf = null
+    // Tabby can follow the system's light or dark mode, with no config change.
+    const schemeQuery = matchMedia('(prefers-color-scheme: dark)')
+    const onScheme = () => setTimeout(() => {
+        lightOf = null
+        queueRender()
+    }, 500)
+    schemeQuery.addEventListener('change', onScheme)
+    function lightBar (el) {
+        if (lightOf?.el !== el) {
+            lightOf = { el, value: isLightBg(getComputedStyle(el).getPropertyValue('--tg-bg')) }
+        }
+        return lightOf.value
     }
 
     /** Whether a CSS colour is light (relative luminance over 0.5); a canvas turns any CSS colour into #rrggbb. */
@@ -2068,7 +2087,14 @@ function install (injector) {
     // Neighbours for the empty groups a reload handed over, before the first change moves anything.
     trackSlots(app.tabs, groups, marks)
     const subs = [
-        injector.get(core.ConfigService).changed$.subscribe(() => { shellCache = null }),
+        injector.get(core.ConfigService).changed$.subscribe(() => {
+            shellCache = null
+            // Tabby applies a new theme a moment after the config changes.
+            setTimeout(() => {
+                lightOf = null
+                queueRender()
+            }, 500)
+        }),
         app.tabOpened$.subscribe(watch),
         app.tabOpened$.subscribe(tab => {
             const path = tab.__tgRestore
@@ -2524,6 +2550,7 @@ function install (injector) {
         userIconsWatch?.close()
         buttonBar.dispose()
         topObserver.disconnect()
+        schemeQuery.removeEventListener('change', onScheme)
         document.body.classList.remove('tg-tab-drag')
         clearTimeout(foldTimer)
         document.querySelectorAll('.tg-anim').forEach(e => e.classList.remove('tg-anim'))
