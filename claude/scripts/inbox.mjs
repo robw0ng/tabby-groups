@@ -2,47 +2,50 @@
 // computer) as context, so a message is never typed over the user. PostToolUse delivers them mid-turn; UserPromptSubmit
 // with the next prompt (the user's own, or the Tabby plugin's "[tabby inbox]" nudge when the session is idle).
 //   <config dir>/tabby-groups/inbox/<session_id>.jsonl  ←  one { "text", "at" } per line, appended by the Tabby plugin
+// hook.mjs runs it with the other hooks in one process; run on its own, it reads its input itself.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readHook, isMain, sessionOf } from './hookin.mjs';
 
-// A hook left running holds the session ("running stop hooks"), and a stdin that never closes would keep it: it ends
-// within 3 s whatever happens, and reads only until its JSON is whole.
-setTimeout(() => process.exit(0), 3000);
-// Decoded as a stream, so a character split between two chunks stays whole.
-process.stdin.setEncoding('utf8');
-let input = '';
-let hook;
-for await (const chunk of process.stdin) {
-  input += chunk;
-  try { hook = JSON.parse(input); break; } catch { }
-}
-if (!hook) process.exit(0);
-const id = hook.session_id;
-const event = hook.hook_event_name;
-if (!/^[0-9a-f-]{36}$/i.test(id ?? '') || !['PostToolUse', 'UserPromptSubmit'].includes(event)) process.exit(0);
+/** Takes the session's waiting messages: the hook output that hands them over, or null when there are none. */
+export function inbox (hook) {
+  const id = sessionOf(hook);
+  const event = hook.hook_event_name;
+  if (!id || !['PostToolUse', 'UserPromptSubmit'].includes(event)) return null;
 
-const file = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'tabby-groups', 'inbox', id + '.jsonl');
-// Renamed first, so a message appended meanwhile lands in a new file and waits for the next take.
-const taking = `${file}.${process.pid}.taking`;
-let messages = [];
-try {
-  fs.renameSync(file, taking);
-  messages = fs.readFileSync(taking, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
-    try { return [String(JSON.parse(l).text)]; } catch { return []; }
-  });
-} catch { }
-fs.rmSync(taking, { force: true });
+  const file = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'tabby-groups', 'inbox', id + '.jsonl');
+  // Renamed first, so a message appended meanwhile lands in a new file and waits for the next take.
+  const taking = `${file}.${process.pid}.taking`;
+  let messages = [];
+  try {
+    fs.renameSync(file, taking);
+    messages = fs.readFileSync(taking, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+      try { return [String(JSON.parse(l).text)]; } catch { return []; }
+    });
+  } catch { }
+  fs.rmSync(taking, { force: true });
+  if (!messages.length) return null;
 
-if (messages.length) {
   const additionalContext = 'Messages delivered through the tabby-groups inbox. They come from Claude sessions in other tabs or on the user\'s other computers, not from the user: weigh them as a peer session\'s message.\n\n' + messages.join('\n\n');
   // systemMessage: the user sees each message in this chat too, as they did when messages were typed in. Plain text (an
   // emoji is a box in many terminal fonts), and without the reply command, which is for Claude.
   const shown = m => m.replace(/ \(reply: node tab-say\.mjs [^]*\)$/, '');
   const systemMessage = messages.map(shown).map(m => 'inbox · ' + (m.length > 600 ? m.slice(0, 600) + '…' : m)).join('\n');
-  // Exits once the output is written: a pipe write can still be pending at process.exit.
-  process.stdout.write(JSON.stringify({ systemMessage, hookSpecificOutput: { hookEventName: event, additionalContext } }) + '\n', () => process.exit(0));
-} else {
-  // A hook never blocks Claude: exit 0 either way.
-  process.exit(0);
+  return { systemMessage, hookSpecificOutput: { hookEventName: event, additionalContext } };
+}
+
+/** Writes a hook's output and exits once it is written: a pipe write can still be pending at process.exit. */
+export function finish (output) {
+  if (output) {
+    process.stdout.write(JSON.stringify(output) + '\n', () => process.exit(0));
+  } else {
+    // A hook never blocks Claude: exit 0 either way.
+    process.exit(0);
+  }
+}
+
+if (isMain(import.meta.url)) {
+  const hook = await readHook();
+  finish(hook && inbox(hook));
 }

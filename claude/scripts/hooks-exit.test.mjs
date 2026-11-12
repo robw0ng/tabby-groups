@@ -30,7 +30,7 @@ const run = (file, input, split) => new Promise((resolve) => {
 let bad = 0;
 const check = (name, ok, detail) => { if (!ok) { bad++; console.error(`FAIL ${name} ${JSON.stringify(detail)}`); } };
 
-const hooks = ['asking.mjs', 'compacting.mjs', 'inbox.mjs'];
+const hooks = ['asking.mjs', 'compacting.mjs', 'inbox.mjs', 'hook.mjs'];
 const idle = await Promise.all(hooks.map((f) => run(f)));
 for (const r of idle) {
   check('nothing sent: exits 0 on its timer, well before 8 s', r.code === 0 && r.ms < 6000, r);
@@ -49,12 +49,21 @@ r = await run('asking.mjs', { session_id: id, hook_event_name: 'PreToolUse', too
 const askingFile = path.join(cfg, 'tabby-groups', 'asking', id + '.json');
 check('asking: writes its file and exits 0', r.code === 0 && fs.existsSync(askingFile), { r });
 slow('asking', r);
-// The old hook (no break: it waits for stdin to close) must fail the same check: its timer ends it before the work.
+// The old hook (no early return: it waits for stdin to close) must fail the same check: its timer ends it before the
+// work. A copy of asking.mjs beside a hookin.mjs whose read loop keeps going.
 fs.rmSync(askingFile, { force: true });
-const hanging = path.join(cfg, 'asking-hanging.mjs');
-const src = fs.readFileSync(path.join(import.meta.dirname, 'asking.mjs'), 'utf8');
-fs.writeFileSync(hanging, src.replace('hook = JSON.parse(input); break;', 'hook = JSON.parse(input);'));
-check('the check has teeth: a copy without the break was made', fs.readFileSync(hanging, 'utf8') !== src);
+const hangDir = path.join(cfg, 'hanging');
+fs.mkdirSync(hangDir, { recursive: true });
+const hanging = path.join(hangDir, 'asking.mjs');
+fs.copyFileSync(path.join(import.meta.dirname, 'asking.mjs'), hanging);
+const src = fs.readFileSync(path.join(import.meta.dirname, 'hookin.mjs'), 'utf8');
+// First with the real reader: the copy must do its work, or "writes nothing" below would prove nothing.
+fs.writeFileSync(path.join(hangDir, 'hookin.mjs'), src);
+r = await run(hanging, { session_id: id, hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion' });
+check('the copy works with the real reader', r.code === 0 && fs.existsSync(askingFile), { r });
+fs.rmSync(askingFile, { force: true });
+fs.writeFileSync(path.join(hangDir, 'hookin.mjs'), src.replace('try { return JSON.parse(input); } catch { }', 'try { JSON.parse(input); } catch { }'));
+check('the check has teeth: a reader that never returns early was made', fs.readFileSync(path.join(hangDir, 'hookin.mjs'), 'utf8') !== src);
 r = await run(hanging, { session_id: id, hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion' });
 check('the old hanging hook writes nothing (so the check above would fail on it)', !fs.existsSync(askingFile), { r });
 const inbox = path.join(cfg, 'tabby-groups', 'inbox');
@@ -65,6 +74,21 @@ let context = null;
 try { context = JSON.parse(r.out).hookSpecificOutput.additionalContext; } catch { }
 check('inbox: prints its message whole and exits 0', r.code === 0 && context?.endsWith('hello'), { r });
 slow('inbox', r);
+
+// hook.mjs: every event in one process, with the parts hooks.json once ran as separate processes.
+fs.writeFileSync(askingFile, JSON.stringify({ kind: 'permission', since: 1 }));
+fs.writeFileSync(path.join(inbox, id + '.jsonl'), JSON.stringify({ text: 'hi again', at: 2 }) + '\n');
+r = await run('hook.mjs', { session_id: id, hook_event_name: 'PostToolUse', tool_name: 'Bash' });
+context = null;
+try { context = JSON.parse(r.out).hookSpecificOutput.additionalContext; } catch { }
+check('hook.mjs on PostToolUse: clears the question and hands over the inbox, in one process', r.code === 0 && !fs.existsSync(askingFile) && context?.endsWith('hi again'), { r });
+slow('hook.mjs', r);
+fs.writeFileSync(askingFile, JSON.stringify({ kind: 'question', since: 1 }));
+r = await run('hook.mjs', { session_id: id, hook_event_name: 'PreCompact', trigger: 'auto' });
+const compactFile2 = path.join(cfg, 'tabby-groups', 'compacting', id + '.json');
+check('hook.mjs on PreCompact: records the compaction and leaves the question alone', r.code === 0 && fs.existsSync(compactFile2) && fs.existsSync(askingFile), { r });
+r = await run('hook.mjs', { session_id: id, hook_event_name: 'Stop' });
+check('hook.mjs on Stop: clears the compaction and the question', r.code === 0 && !fs.existsSync(compactFile2) && !fs.existsSync(askingFile), { r });
 
 fs.rmSync(cfg, { recursive: true, force: true });
 console.log(bad ? `${bad} failed` : 'all passed');
