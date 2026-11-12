@@ -78,7 +78,7 @@ function install (injector) {
     }
     // Set by dispose(). Work still in flight (a process-tree read, a shell wait) must not draw over the next install.
     let disposed = false
-    const inbox = createInbox({ app, isDisposed: () => disposed, queueRender: () => queueRender() })
+    const inbox = createInbox({ app, isDisposed: () => disposed, queueRender: pane => queueRow(pane) })
     const tint = g => g.color ?? NO_COLOR
     /** How many levels in a row, up from this group, share their parent's colour: the number of shading steps. */
     const shadeOf = g => {
@@ -749,7 +749,8 @@ function install (injector) {
         queueRender()
     }
     window.addEventListener('resize', onResize)
-    window.addEventListener('tabby-remote:presence', queueRender)
+    const onPresence = () => queueRow(null)
+    window.addEventListener('tabby-remote:presence', onPresence)
     window.addEventListener('focus', onWindowFocus)
 
     /** Puts the search row into the vertical sidebar (Tabby can recreate the sidebar) and removes it elsewhere. */
@@ -1095,26 +1096,9 @@ function install (injector) {
         return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5
     }
 
-    function makeHeader (g, depth, afterGroup, open) {
-        const h = document.createElement('div')
-        h.className = 'tg-header ' + (depth ? 'tg-sub' : 'tg-root') + (afterGroup ? ' tg-after-group' : '') + (depth && !open ? ' tg-shut' : '')
-        h.dataset.group = g.id
-        h.dataset.name = g.name
-        h.style.setProperty('--tg-own', tint(g))
-        h.style.setProperty('--tg-own-pct', tintPct(depth) + '%')
-        h.style.setProperty('--tg-own-depth', shadeOf(g))
-        h.dataset.tgTip = g.name
+    /** A group header's counts: its tabs, then what its Claude tabs are doing. Painted again in place by updateRows. */
+    function paintCount (countEl, g) {
         const count = subtree(g.id).length
-        const body = '<span class="tg-arrow"></span><span class="tg-text"><span class="tg-name"></span><span class="tg-count"></span></span>'
-        h.innerHTML = depth ? `<div class="tg-inner">${body}</div>` : body
-        const arrow = h.querySelector('.tg-arrow')
-        // Lucide chevron-right (ISC).
-        arrow.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
-        arrow.classList.toggle('tg-open', !shut(g))
-        if (g.pinned) {
-            ;(h.querySelector('.tg-inner') ?? h).insertAdjacentHTML('beforeend', '<i class="fas fa-thumbtack tg-pin"></i>')
-        }
-        const countEl = h.querySelector('.tg-count')
         countEl.textContent = `${count} ${count === 1 ? 'tab' : 'tabs'}`
         const needs = subtree(g.id).filter(t => t.__tgInfo?.agent?.needsYou).length
         const busy = subtree(g.id).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length
@@ -1134,6 +1118,28 @@ function install (injector) {
         if (roll) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll', textContent: roll }))
         }
+    }
+
+    function makeHeader (g, depth, afterGroup, open) {
+        const h = document.createElement('div')
+        h.className = 'tg-header ' + (depth ? 'tg-sub' : 'tg-root') + (afterGroup ? ' tg-after-group' : '') + (depth && !open ? ' tg-shut' : '')
+        h.dataset.group = g.id
+        h.dataset.name = g.name
+        h.style.setProperty('--tg-own', tint(g))
+        h.style.setProperty('--tg-own-pct', tintPct(depth) + '%')
+        h.style.setProperty('--tg-own-depth', shadeOf(g))
+        h.dataset.tgTip = g.name
+        const count = subtree(g.id).length
+        const body = '<span class="tg-arrow"></span><span class="tg-text"><span class="tg-name"></span><span class="tg-count"></span></span>'
+        h.innerHTML = depth ? `<div class="tg-inner">${body}</div>` : body
+        const arrow = h.querySelector('.tg-arrow')
+        // Lucide chevron-right (ISC).
+        arrow.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
+        arrow.classList.toggle('tg-open', !shut(g))
+        if (g.pinned) {
+            ;(h.querySelector('.tg-inner') ?? h).insertAdjacentHTML('beforeend', '<i class="fas fa-thumbtack tg-pin"></i>')
+        }
+        paintCount(h.querySelector('.tg-count'), g)
         const add = Object.assign(document.createElement('button'), { className: 'tg-add', textContent: '+' })
         add.dataset.tgTip = add.ariaLabel = `New tab in ${g.name}`
         ;(h.querySelector('.tg-inner') ?? h).append(add)
@@ -1876,10 +1882,10 @@ function install (injector) {
             } catch { }
         }
         info.cwd = cwd || info.cwd
-        queueRender()
+        queueRow(top(term))
     }
 
-    const agentState = createAgent({ app, top, queueRender, inspect, isDisposed: () => disposed })
+    const agentState = createAgent({ app, top, queueRender: tab => queueRow(tab), inspect, isDisposed: () => disposed })
     const { updateAgent, readAsking, setAsking, readCompacting, setCompacting, setBackground, markSeen } = agentState
     const onAgentEvent = e => inbox.onAgent(e.detail.tab)
     window.addEventListener('tabby-groups:agent', onAgentEvent)
@@ -1951,6 +1957,53 @@ function install (injector) {
         queueInspect(term, 1500)
         clearTimeout(term.__tgLateTimer)
         term.__tgLateTimer = setTimeout(() => inspect(term), 6000)
+    }
+
+    /*
+     * A tab's own state changed (its Claude status, inbox, folder or app, or the phones viewing it; null: every tab): its
+     * row and its groups' counts are updated in place, rather than the whole side bar redrawn, which rebuilt every group
+     * header about once a second with many Claude tabs. Anything else still redraws, and so does this when a redraw is
+     * due anyway, a search runs (it matches on folder and app), an edit or drag holds redraws, or the rows do not line up.
+     */
+    const dirtyRows = new Set()
+    let rowsQueued = false
+    function queueRow (tab) {
+        if (disposed) {
+            return
+        }
+        dirtyRows.add(tab ? top(tab) : null)
+        if (rowsQueued) {
+            return
+        }
+        rowsQueued = true
+        setTimeout(() => {
+            rowsQueued = false
+            const tabs = dirtyRows.has(null) ? [...app.tabs] : [...dirtyRows]
+            dirtyRows.clear()
+            updateRows(tabs)
+        })
+    }
+    function updateRows (tabs) {
+        const list = document.querySelector('.tabs-on-left > .tab-bar > .tabs, .tabs-on-right > .tab-bar > .tabs')
+        const rows = list?.querySelectorAll(':scope > tab-header')
+        if (disposed || renderQueued || !list || query.trim() || editing || dragging || draggedGroup || rows.length !== app.tabs.length) {
+            queueRender()
+            return
+        }
+        const touched = new Set()
+        for (const tab of tabs) {
+            const i = app.tabs.indexOf(tab)
+            if (i >= 0) {
+                decorate(rows[i], tab, true)
+                chainOf(tab.__tg).forEach(g => touched.add(g))
+            }
+        }
+        for (const g of touched) {
+            const countEl = [...list.querySelectorAll(':scope > .tg-header')].find(h => h.dataset.group === g.id)?.querySelector('.tg-count')
+            if (countEl) {
+                paintCount(countEl, g)
+            }
+        }
     }
 
     let renderQueued = false
@@ -2535,7 +2588,7 @@ function install (injector) {
         toolbar.remove()
         handle.remove()
         window.removeEventListener('resize', onResize)
-        window.removeEventListener('tabby-remote:presence', queueRender)
+        window.removeEventListener('tabby-remote:presence', onPresence)
         window.removeEventListener('focus', onWindowFocus)
         document.removeEventListener('dblclick', onTabDblClick, true)
         document.removeEventListener('dblclick', onBarDblClick, true)

@@ -134,7 +134,7 @@ function createAgent ({ app, top, queueRender, inspect, isDisposed }) {
             ;(t.__tgInfo ??= {}).agent = agent
         }
         window.dispatchEvent(new CustomEvent('tabby-groups:agent', { detail: { tab: t } }))
-        queueRender()
+        queueRender(t)
     }
     /** Clears "needs you" on a tab: called when it is selected in a focused Tabby, and by tabby-remote when a device opens it. */
     function markSeen (tab) {

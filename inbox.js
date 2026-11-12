@@ -110,7 +110,7 @@ function createInbox ({ app, isDisposed, queueRender = () => {} }) {
         }
         fs.mkdirSync(inboxDir, { recursive: true })
         fs.appendFileSync(fileOf(id), JSON.stringify({ text: String(text), at: Date.now() }) + '\n')
-        queueRender() // the tab's mail badge
+        queueRender(pane) // the tab's mail badge
         await flush(pane)
         return 'inbox'
     }

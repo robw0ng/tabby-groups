@@ -723,6 +723,31 @@ await sleep(300);
   check('neither drag moved anything (Esc)', (await groupsNow()).some((g) => g.name === 'inner' && g.parent === 'outer'), await groupsNow());
 }
 
+// A tab's own state change (here the phones-viewing event, as Claude status and inbox changes go) updates rows in place:
+// the group headers are not rebuilt. A tab change still redraws them.
+{
+  const rowsOnly = await run(`async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const app = ${APP};
+    const tab = app.tabs.find(t => (t.customTitle || t.title) === 'o1');
+    const row = () => document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.indexOf(tab)];
+    const before = [...document.querySelectorAll('.tabs > .tg-header')];
+    // A phone viewing o1: its row gets the badge through the in-place update alone.
+    tab.__trPresence = [{ name: 'Phone', state: 'watching', color: '#3b78ff' }];
+    for (let k = 0; k < 5; k++) { window.dispatchEvent(new CustomEvent('tabby-remote:presence')); await sleep(50) }
+    await sleep(300);
+    const badge = !!row()?.querySelector('.tg-presence .tg-badge');
+    const same = before.every(h => h.isConnected) && badge;
+    delete tab.__trPresence;
+    window.dispatchEvent(new CustomEvent('tabby-remote:presence'));
+    await sleep(300);
+    ${APP}.emitTabsChanged();
+    await sleep(300);
+    return { same, redrawn: before.every(h => !h.isConnected) };
+  }`);
+  check('a tab\'s own state change leaves the group headers in place; a tab change redraws them', rowsOnly.same && rowsOnly.redrawn, rowsOnly);
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
