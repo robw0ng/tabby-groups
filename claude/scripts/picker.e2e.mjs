@@ -444,6 +444,43 @@ check('closing the active tab shows the most recent tab of its group, not the mo
 check('again: the group\'s other tab shows, though a tab outside was used more recently', focus.sameGroupLeft === 'f2', focus);
 check('the last tab of its group closed: the most recent tab anywhere shows', focus.lastOfGroup === 'fout', focus);
 
+// A double-click inside a group (its footer's free space, an empty group's "Empty" row) opens no tab; outside every group, one.
+const dbl = async (pt) => {
+  for (const clickCount of [1, 2]) {
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', ...pt, button: 'left', buttons: 1, clickCount });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...pt, button: 'left', buttons: 0, clickCount });
+  }
+  await sleep(2500);
+};
+const tabCount = async () => (await state()).tabs.length;
+// The point must hit that row (or the free space under the list), or "no new tab" would prove nothing.
+const hits = (pt, sel) => run(`([pt, sel]) => { const e = document.elementFromPoint(pt.x, pt.y); return !!e && (sel ? !!e.closest(sel) : !!e.closest('.tab-bar') && !e.closest('tab-header, .tg-header, .tg-foot, .tg-empty')) }`, [pt, sel]);
+// An empty group: its only tab closed (the group stays).
+await run(`async () => {
+  const app = ${APP};
+  await window.__tabbyGroups.open({ title: 'dblE', group: 'dblempty' });
+  await app.closeTab(app.tabs.find(t => (t.customTitle || t.title) === 'dblE'), false, true);
+}`);
+await sleep(1000);
+const n0 = await tabCount();
+const footAt = await center('.tg-foot[data-name="inner"]');
+const footHit = await hits(footAt, '.tg-foot');
+await dbl(footAt);
+check('a double-click on a group\'s free space opens no tab', footHit && (await tabCount()) === n0, { footHit, n0 });
+const emptyAt = await center('.tg-empty[data-name="dblempty"]');
+const emptyHit = !!emptyAt && await hits(emptyAt, '.tg-empty');
+if (emptyHit) await dbl(emptyAt);
+check('a double-click on an empty group\'s "Empty" row opens no tab', emptyHit && (await tabCount()) === n0, { emptyHit, n0 });
+p = await points();
+const freeHit = await hits(p.free, null);
+await dbl(p.free);
+const afterDbl = (await state()).tabs;
+const opened = afterDbl.length === n0 + 1;
+check('a double-click on the free space outside every group still opens a tab there', freeHit && opened && afterDbl.at(-1).group === null, { freeHit, last: afterDbl.slice(-2) });
+// Only the tab this step opened is closed.
+await run(`async (opened) => { const app = ${APP}; window.__tabbyGroups.deleteGroup('dblempty'); if (opened) await app.closeTab(app.tabs.at(-1), false, true) }`, opened);
+await sleep(800);
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
@@ -451,6 +488,6 @@ check('right-click on a tab opens no picker', !s.picker);
 console.log('By eye: the menu now open is the small one: Open in > Explorer/Finder, Tabby Files and VS Code open the tab\'s folder (a Files tab lands right after the tab, in its group); on a Claude tab working in another repo, Open repo in <name> > the same three open that repo; Arrow keys and Enter work in it; Shift+F10 (or the menu key) opens it for the active tab, also with the terminal focused; Settings > Tab groups > Small tab menu off brings back Tabby\'s full menu.');
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space outside every group still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

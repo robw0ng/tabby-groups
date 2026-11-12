@@ -966,7 +966,7 @@ function install (injector) {
                 return
             }
             clearTimeout(clickTimer)
-            // The second click of a double-click (which opens a tab or renames) cancels the pending collapse.
+            // The second click of a double-click (a rename on the name) cancels the pending collapse.
             if (e.detail > 1) {
                 return
             }
@@ -1040,8 +1040,8 @@ function install (injector) {
     }
     document.addEventListener('dblclick', onTabDblClick, true)
 
-    // A double-click on free side-bar space opens a new tab in the group whose panel is under the pointer, or a loose tab
-    // outside every panel. The tab comes from Tabby's own "+" button, so it follows Tabby's new-tab rules.
+    // A double-click on free side-bar space outside every group opens a loose tab, from Tabby's own "+" button, so it
+    // follows Tabby's new-tab rules. Inside a group's panel (its "Empty" row too) it does nothing: the group's + opens a tab there.
     function onBarDblClick (e) {
         const bar = e.target.closest?.('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar')
         if (!bar || e.target.closest('tab-header, .tg-toolbar, .btn-group, .tg-name, .tg-tab-rename, .tg-resize, .tg-add')) {
@@ -1049,7 +1049,9 @@ function install (injector) {
         }
         e.stopPropagation()
         e.preventDefault()
-        openViaPlus(groupAtPoint(bar, e.clientX, e.clientY))
+        if (!groupAtPoint(bar, e.clientX, e.clientY)) {
+            openViaPlus(null)
+        }
     }
 
     /**
@@ -1073,7 +1075,7 @@ function install (injector) {
     }
     document.addEventListener('dblclick', onBarDblClick, true)
 
-    // A right-click on the same free space opens the new-tab picker; the new tab lands as a double-click's would.
+    // A right-click on the same free space opens the new-tab picker; the new tab lands in the group under the pointer, else outside every group.
     // On a group header's "+" it opens for that group (this capture listener runs before the header's own menu).
     let closePicker = null
     async function onBarContextMenu (e) {
