@@ -12,7 +12,7 @@ const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
-const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex } = require('./places')
+const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
 const { findCode, smallMenu } = require('./tabmenu')
 
@@ -2113,7 +2113,14 @@ function install (injector) {
                 if (tab && tab !== draggedTab) {
                     // A group dropped on a tab goes next to it; no folder of a group and a tab.
                     const where = draggedGroup ? (f < 0.5 ? 'before' : 'after') : f < 0.25 ? 'before' : f > 0.75 ? 'after' : 'onto'
-                    dropIntent = { row, tab, where }
+                    // A group dragged to the line under the group above it, which touches its own header: its own place,
+                    // so no drop (and no line) rather than a move into the group above.
+                    let next = row.nextElementSibling
+                    while (next && (!next.offsetHeight || next.matches('.cdk-drag-placeholder'))) {
+                        next = next.nextElementSibling
+                    }
+                    const ownPlace = where === 'after' && draggedGroup && atOwnHeader(next && { header: next.matches('.tg-header'), group: next.dataset.group }, draggedGroup.id)
+                    dropIntent = ownPlace ? null : { row, tab, where }
                 }
             } else if (groups.has(row.dataset.group)) {
                 const g = groups.get(row.dataset.group)

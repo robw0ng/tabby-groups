@@ -147,4 +147,11 @@ function dropIndex (from, anchor, after) {
     return from < target ? target - 1 : target
 }
 
-module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex }
+/**
+ * For a dragged group: whether the line under a hovered tab row is the group's own place, because the next row shown
+ * (`next`: { header, group }, or null) is the group's own header. That tab belongs to the group just above, and taking
+ * its group would nest the dragged one there.
+ */
+const atOwnHeader = (next, id) => !!next?.header && next.group === id
+
+module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader }

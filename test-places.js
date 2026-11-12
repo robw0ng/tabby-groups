@@ -1,6 +1,6 @@
 // node test-places.js: checks where empty groups sit (places.js), with no Tabby. On screen: picker.e2e.mjs.
 const assert = require('assert')
-const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose, dropIndex } = require('./places')
+const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose, dropIndex, atOwnHeader } = require('./places')
 
 const tab = (name, group) => ({ name, __tg: group })
 const mk = (...gs) => new Map(gs.map(g => [g.name, { parent: null, id: g.name, ...g }]))
@@ -81,5 +81,12 @@ assert.strictEqual(groups.get('E').slot, 2, 'restored: after a and b')
         assert.strictEqual(move(list, x, dropIndex(x, anchor, after)).join(), want, `${after ? 'after' : 'before'} ${list[anchor]}`)
     }
 }
+
+// A dragged group G: the line under a tab whose next shown row is G's own header is G's own place (no drop); a row
+// between them (another group's header or footer, an empty group) makes it a real move.
+assert.strictEqual(atOwnHeader({ header: true, group: 'G' }, 'G'), true, 'the group above touches G: its own place')
+assert.strictEqual(atOwnHeader({ header: true, group: 'P' }, 'G'), false, "a parent's header between: taking G out of P is a real move")
+assert.strictEqual(atOwnHeader({ header: false, group: 'H' }, 'G'), false, "a sibling's footer between: a real move")
+assert.strictEqual(atOwnHeader(null, 'G'), false, 'the last row: a real move')
 
 console.log('test-places: all passed')
