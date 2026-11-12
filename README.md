@@ -51,6 +51,7 @@ Follow [INSTALL.md](INSTALL.md). It installs both parts, and every step is safe 
 | Collapse or expand | Click the group header. Its tabs slide shut or open in 0.1 s (at once with reduced motion; never at launch) |
 | Leave a group | Right-click the tab > Remove from group |
 | Move a tab to another window | Right-click the tab > Move to window > Window n or New window. The shell and any Claude in it keep running; a split tab moves whole; its group comes along (when it was the group's last tab, the group also stays behind, empty). If its shell ended in between, a new shell resumes the Claude or Codex session. Window 1 is the oldest window. Or drag the tab out of its window: dropped over another Tabby window, it goes to the row under the pointer (on the free space below the rows, to the end outside every group; on the terminal, it keeps its group); dropped outside every window, it opens in a new one. Escape before the drop cancels. The drop sees only Tabby windows: over another app that covers a Tabby window, the tab still goes to that Tabby window. |
+| Drag a tab | With tabs on the side, the cursor shows grabbing (for a group too) and the tab lifts with a shadow; on the drop it lands at the line at once |
 | Cancel a drag | Press Escape before you let go: the tab (or group) stays where it was, in its group, with no move to another window and no split |
 | Pick what a new tab opens | Right-click empty space in the side bar, a group's empty space, or a group header's + (a left-click on + opens the default tab in that group, as before) |
 

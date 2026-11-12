@@ -33,6 +33,21 @@ const CSS = `
 .tabs-on-left .tabs.tg-light.tg-light > tab-header > .pin-indicator, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .pin-indicator { color: #222222 !important; }
 .tabs > .tg-hidden { display: none !important; }
 /*
+ * A tab or group dragged in the side bar (index.js sets tg-tab-drag on body): a grabbing cursor, and the picked-up tab
+ * lifts with a shadow (no scale: CDK moves the preview by its transform, which a scale would stretch away from the
+ * pointer). No glide on the drop: the side bar keeps Tabby's live sorting off, so its placeholder stays where the tab
+ * came from, and a glide would carry the tab back there before the plugin puts it at the drop line.
+ */
+body.tg-tab-drag, body.tg-tab-drag * { cursor: grabbing !important; }
+body.tg-tab-drag tab-header.cdk-drag-preview { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); transition: box-shadow 100ms ease-out; }
+@starting-style {
+    body.tg-tab-drag tab-header.cdk-drag-preview { box-shadow: none; }
+}
+body.tg-tab-drag .cdk-drag-animating { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+    body.tg-tab-drag tab-header.cdk-drag-preview { transition: none; }
+}
+/*
  * A group opened or closed by the user (index.js sets tg-anim on the list for a moment): its tab rows slide open or shut
  * with a slight fade, display switching at the end (allow-discrete). A row's size is its flex-basis (Tabby's, and the
  * plugin's own for two-line and last rows, all !important), so that is what moves. The selectors start like Tabby's own

@@ -2042,6 +2042,8 @@ function install (injector) {
         }),
         app.tabDragActive$.subscribe(tab => {
             dragging = !!tab
+            // styles.js: the grabbing cursor and the lifted tab, with tabs on the side.
+            document.body.classList.toggle('tg-tab-drag', dragging && sideBar())
             if (dragging) {
                 startDrop(tab)
                 windowsApi.dragStart(tab)
@@ -2308,6 +2310,7 @@ function install (injector) {
                 dragCancel = null
                 hideTip()
                 h.classList.add('tg-dragging')
+                document.body.classList.add('tg-tab-drag')
                 ghost.textContent = g.name
                 document.body.appendChild(ghost)
             }
@@ -2326,6 +2329,7 @@ function install (injector) {
             draggedGroup = dropIntent = dragCancel = null
             ghost.remove()
             h.classList.remove('tg-dragging')
+            document.body.classList.remove('tg-tab-drag')
             showDropMark()
             // The click that ends a drag must not also collapse the group. It fires before any timer.
             const swallow = ev => ev.stopPropagation()
@@ -2453,6 +2457,7 @@ function install (injector) {
         userIconsWatch?.close()
         buttonBar.dispose()
         topObserver.disconnect()
+        document.body.classList.remove('tg-tab-drag')
         clearTimeout(foldTimer)
         document.querySelectorAll('.tg-anim').forEach(e => e.classList.remove('tg-anim'))
         topButtonsEl.remove()
