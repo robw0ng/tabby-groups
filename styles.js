@@ -271,6 +271,7 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 .tg-toast-btn:hover { background: rgba(127, 127, 127, .2); }
 .tg-toast-note { opacity: .7; }
 .tg-toast-x { margin-left: auto; padding: 2px 8px; }
+.tg-tip { pointer-events: none; }
 .tg-tip .tooltip-inner { white-space: pre-line; text-align: left; }
 .tabs.tg-light.tg-light .tg-roll-cmp { color: #5b3fa8; }
 /* Tabby's pin sits between the number and the icon; it gets the same 10px gaps. */

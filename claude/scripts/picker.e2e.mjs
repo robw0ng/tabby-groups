@@ -584,6 +584,29 @@ await call('Emulation.setEmulatedMedia', { features: [] });
 check('with reduced motion, no transition: the row is full at once', reduced.transition.split(',').every((d) => parseFloat(d) === 0) && reduced.group < 1, reduced);
 await sleep(400);
 
+// A tooltip stays put while its row is redrawn: hovering a group header for 3 s, with a redraw (a state change rebuilds
+// the headers) every 250 ms and the pointer nudged, the tooltip appears once and never hides and shows again.
+await run(`() => {
+  window.__tgTips = { added: 0, removed: 0 };
+  window.__tgTipWatch = new MutationObserver(rs => rs.forEach(r => {
+    r.addedNodes.forEach(n => { if (n.classList?.contains('tg-tip')) window.__tgTips.added++ });
+    r.removedNodes.forEach(n => { if (n.classList?.contains('tg-tip')) window.__tgTips.removed++ });
+  }));
+  window.__tgTipWatch.observe(document.body, { childList: true });
+}`);
+const headerAt = await run(`() => { const h = document.querySelector('.tg-header[data-name="outer"]'); const r = h.getBoundingClientRect(); return { x: r.right - 40, y: r.top + r.height / 2 } }`);
+// Redraw first, then a pointer move, so the new header always gets its mouseover.
+for (let k = 0; k < 12; k++) {
+  await run(`() => ${APP}.emitTabsChanged()`);
+  await sleep(100);
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: headerAt.x + (k % 2), y: headerAt.y, buttons: 0 });
+  await sleep(150);
+}
+const tips = await run(`() => { window.__tgTipWatch.disconnect(); return { ...window.__tgTips, shown: !!document.querySelector('.tg-tip.show'), text: document.querySelector('.tg-tip')?.textContent } }`);
+check('hovering a group header through redraws: its tooltip shows once and stays', tips.added === 1 && tips.removed === 0 && tips.shown && tips.text === 'outer', tips);
+await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5, buttons: 0 });
+await sleep(300);
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
