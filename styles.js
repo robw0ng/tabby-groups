@@ -87,6 +87,7 @@ app-root .main.content .tab-bar > .tabs.tg-anim > tab-header.tg-hidden {
 }
 .tg-add:hover { background: rgba(255, 255, 255, .08); }
 .tg-pin + .tg-add { margin-left: 4px; }
+.tg-add + .tg-close { margin-left: 2px; font-size: 16px; }
 /* Devices viewing a tab through tabby-remote; the same badge as its phone side bar. */
 .tg-presence { display: flex; align-items: center; gap: 4px; margin-left: 4px; flex: none; align-self: center; transition: margin-right .25s; }
 /* Tabby's hover buttons float over the row's right end: the badges step left of them, and the title gives way. */
@@ -396,6 +397,7 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
     /* An empty group keeps its + (it has no tab to add from otherwise), small and in place of the arrow, which would only fold "Empty". */
     .tg-header.tg-of-empty .tg-add { display: block !important; margin-left: 0; width: 16px; height: 16px; line-height: 16px; font-size: 14px; }
     .tg-header.tg-of-empty .tg-arrow { display: none !important; }
+    .tg-header.tg-of-empty .tg-add.tg-close { display: none !important; }
     .tab-bar > .tabs + .btn-group { grid-column: 1 / -1 !important; flex-wrap: wrap; justify-content: center; }
     .tab-bar > .btn-group { flex-wrap: wrap; justify-content: center; min-width: 0; }
     .tabs > tab-header { justify-content: center; padding-left: 0 !important; padding-right: 0 !important; min-width: 0 !important; }

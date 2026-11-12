@@ -669,6 +669,31 @@ await sleep(300);
   await sleep(300);
 }
 
+// An empty group has an × beside its + that closes it in one click; a group with tabs, or with subgroups, has none.
+{
+  await run(`async () => {
+    const app = ${APP};
+    const tg = window.__tabbyGroups;
+    for (const [title, group, parent] of [['x1', 'xempty'], ['x2', 'xparent'], ['x3', 'xsub', 'xparent']]) {
+      await tg.open({ title, group, ...parent ? { parent } : {} });
+      await app.closeTab(app.tabs.find(t => (t.customTitle || t.title) === title), false, true);
+    }
+  }`);
+  await sleep(800);
+  const xs = await run(`() => ({
+    empty: document.querySelector('.tg-header[data-name="xempty"] .tg-close')?.dataset.tgTip ?? null,
+    withSub: !!document.querySelector('.tg-header[data-name="xparent"] .tg-close'),
+    withTabs: !!document.querySelector('.tg-header[data-name="outer"] .tg-close'),
+  })`);
+  check('an empty group shows an × with the tooltip "Close group"; a group with tabs or subgroups shows none', xs.empty === 'Close group' && !xs.withSub && !xs.withTabs, xs);
+  const xAt = await center('.tg-header[data-name="xempty"] .tg-close');
+  for (const type of ['mousePressed', 'mouseReleased']) await call('Input.dispatchMouseEvent', { type, ...xAt, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });
+  await sleep(500);
+  check('one click on the × removes the empty group', !(await groupsNow()).some((g) => g.name === 'xempty'), await groupsNow());
+  await run(`() => window.__tabbyGroups.deleteGroup('xparent')`);
+  await sleep(300);
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

@@ -1088,6 +1088,21 @@ function install (injector) {
             e.stopPropagation()
             openViaPlus(g.id)
         })
+        // An empty group closes in one click, as its menu's "Delete group" does. Not one with subgroups, empty or not:
+        // one click would remove them all.
+        if (!count && ![...groups.values()].some(c => c.parent === g.id)) {
+            const close = Object.assign(document.createElement('button'), { className: 'tg-add tg-close', textContent: '×' })
+            close.dataset.tgTip = close.ariaLabel = 'Close group'
+            add.after(close)
+            for (const type of ['pointerdown', 'dblclick']) {
+                close.addEventListener(type, e => e.stopPropagation())
+            }
+            close.addEventListener('click', e => {
+                e.stopPropagation()
+                hideTip()
+                deleteGroup(g.id)
+            })
+        }
         const nameEl = h.querySelector('.tg-name')
         nameEl.textContent = g.name
 
@@ -1212,7 +1227,7 @@ function install (injector) {
     let closePicker = null
     async function onBarContextMenu (e) {
         const bar = e.target.closest?.('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar')
-        const plus = e.target.closest?.('.tg-header .tg-add')
+        const plus = e.target.closest?.('.tg-header .tg-add:not(.tg-close)')
         if (!bar || (!plus && e.target.closest('tab-header, .tg-header, .tg-toolbar, .tg-buttons, .btn-group, .tg-name, .tg-tab-rename, .tg-resize, .tg-add'))) {
             return
         }
