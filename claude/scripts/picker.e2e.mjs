@@ -631,6 +631,44 @@ await sleep(300);
   await sleep(500);
 }
 
+// A group the user folds slides its tab rows shut and open (0.1 s); nothing slides without a fold.
+{
+  const rowOf = `[...document.querySelectorAll('.tab-bar .tabs > tab-header')].find(r => r.querySelector('.name')?.firstChild?.textContent.trim() === 'i1')`;
+  const still = await run(`() => !document.querySelector('.tabs.tg-anim')`);
+  const full = await run(`() => ${rowOf}.offsetHeight`);
+  // Another tab active, or the collapsed group would still show it.
+  await run(`() => { const app = ${APP}; app.selectTab(app.tabs.find(t => (t.customTitle || t.title) === 'loose')) }`);
+  await sleep(300);
+  const fold = await run(`async () => {
+    window.__tabbyGroups.setCollapsed('inner', true);
+    await new Promise(r => setTimeout(r, 45));
+    const row = ${rowOf};
+    const mid = { h: row.getBoundingClientRect().height, anim: !!row.parentElement.classList.contains('tg-anim') };
+    await new Promise(r => setTimeout(r, 300));
+    return { mid, end: row.offsetHeight, anim: !!document.querySelector('.tabs.tg-anim') };
+  }`);
+  check('folding: the tab rows slide shut (part height midway, none at the end, no animation class after)', still && fold.mid.anim && fold.mid.h > 0 && fold.mid.h < full && fold.end === 0 && !fold.anim, { still, full, fold });
+  const open = await run(`async () => {
+    window.__tabbyGroups.setCollapsed('inner', false);
+    await new Promise(r => setTimeout(r, 45));
+    const mid = ${rowOf}.getBoundingClientRect().height;
+    await new Promise(r => setTimeout(r, 300));
+    return { mid, end: ${rowOf}.offsetHeight };
+  }`);
+  check('opening: the tab rows slide open (part height midway, full at the end)', open.mid > 0 && open.mid < full && open.end === full, { full, open });
+  // Reduced motion: no slide, the row gone at once.
+  await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  const instant = await run(`async () => {
+    window.__tabbyGroups.setCollapsed('inner', true);
+    await new Promise(r => setTimeout(r, 45));
+    return ${rowOf}.getBoundingClientRect().height;
+  }`);
+  await call('Emulation.setEmulatedMedia', { features: [] });
+  check('with reduced motion the rows fold at once', instant === 0, instant);
+  await run(`() => window.__tabbyGroups.setCollapsed('inner', false)`);
+  await sleep(300);
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

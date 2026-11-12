@@ -343,7 +343,21 @@ function install (injector) {
         if (!collapsed) {
             chainOf(name).forEach(a => { a.collapsed = false })
         }
+        animateFold()
         changed()
+    }
+
+    // The tab rows of a group the user folds slide (styles.js, tg-anim): only for this moment, so a launch, a restore
+    // or any other redraw shows its rows at once.
+    let foldTimer = null
+    function animateFold () {
+        const list = document.querySelector('.tabs-on-left > .tab-bar > .tabs, .tabs-on-right > .tab-bar > .tabs')
+        if (!list) {
+            return
+        }
+        list.classList.add('tg-anim')
+        clearTimeout(foldTimer)
+        foldTimer = setTimeout(() => list.classList.remove('tg-anim'), 250)
     }
 
     function setColor (name, color, emit = true) {
@@ -2439,6 +2453,8 @@ function install (injector) {
         userIconsWatch?.close()
         buttonBar.dispose()
         topObserver.disconnect()
+        clearTimeout(foldTimer)
+        document.querySelectorAll('.tg-anim').forEach(e => e.classList.remove('tg-anim'))
         topButtonsEl.remove()
         document.querySelectorAll('.tg-moved').forEach(e => e.classList.remove('tg-moved'))
         windowsApi.dispose()

@@ -32,6 +32,25 @@ const CSS = `
 .tabs-on-left .tabs.tg-light.tg-light > tab-header > .index, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .index { color: #222222 !important; opacity: 1 !important; }
 .tabs-on-left .tabs.tg-light.tg-light > tab-header > .pin-indicator, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .pin-indicator { color: #222222 !important; }
 .tabs > .tg-hidden { display: none !important; }
+/*
+ * A group opened or closed by the user (index.js sets tg-anim on the list for a moment): its tab rows slide open or shut
+ * with a slight fade, display switching at the end (allow-discrete). A row's size is its flex-basis (Tabby's, and the
+ * plugin's own for two-line and last rows, all !important), so that is what moves. The selectors start like Tabby's own
+ * tab-row transition rule, which they must outrank. Only the tab rows: the plugin redraws its headers and footers on every
+ * change. Nothing runs on launch or restore, which never set tg-anim.
+ */
+app-root .main.content .tab-bar > .tabs.tg-anim > tab-header {
+    transition: flex-basis 100ms ease-out, min-height 100ms ease-out, padding-block 100ms ease-out, opacity 100ms ease-out, display 100ms allow-discrete;
+}
+app-root .main.content .tab-bar > .tabs.tg-anim > tab-header.tg-hidden {
+    flex-basis: 0 !important; min-height: 0 !important; padding-block: 0 !important; opacity: 0; overflow: hidden;
+}
+@starting-style {
+    app-root .main.content .tab-bar > .tabs.tg-anim > tab-header:not(.tg-hidden) { flex-basis: 0 !important; min-height: 0 !important; padding-block: 0 !important; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    app-root .main.content .tab-bar > .tabs.tg-anim > tab-header { transition: none; }
+}
 .tabs > tab-header.tg-member { background-color: color-mix(in srgb, var(--tg-color) 20%, var(--tg-bg)) !important; }
 .tabs > tab-header.tg-member.active { background-color: color-mix(in srgb, var(--tg-color) 26%, var(--tg-bg)) !important; }
 /* The last row holds the panel's bottom gap as padding; the active colour stops above it, as it does above a subgroup's footer. */
