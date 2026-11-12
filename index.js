@@ -639,6 +639,44 @@ function install (injector) {
             render()
         }
     })
+    // While the search has focus it takes the whole top row: the buttons beside it slide out (styles.js), and come back on
+    // blur, the text and the filter kept. Their width is set first, so the shrink starts from it; they are clipped only
+    // while they move or are gone, so a profile menu opened from them is never cut.
+    let wideTimer = null
+    const topGroup = () => toolbar.parentElement?.querySelector(':scope > .tabs + .btn-group')
+    search.addEventListener('focus', () => {
+        const group = topGroup()
+        if (!group) {
+            return
+        }
+        clearTimeout(wideTimer)
+        group.style.maxWidth = group.scrollWidth + 'px'
+        void group.offsetWidth
+        toolbar.parentElement.classList.add('tg-search-wide', 'tg-search-anim')
+    })
+    search.addEventListener('blur', () => {
+        const bar = toolbar.parentElement
+        bar?.classList.remove('tg-search-wide')
+        clearTimeout(wideTimer)
+        wideTimer = setTimeout(() => {
+            bar?.classList.remove('tg-search-anim')
+            // The bar Tabby shows now (it can rebuild it), unless the search is wide again there.
+            const now = toolbar.parentElement
+            const group = topGroup()
+            if (group && !now?.classList.contains('tg-search-wide')) {
+                group.style.maxWidth = ''
+            }
+        }, 260)
+    })
+    /** The row back as it was: tabs moved off the side, or the side bar narrowed so far that the search hides. */
+    function narrowSearch () {
+        clearTimeout(wideTimer)
+        document.querySelectorAll('.tg-search-wide, .tg-search-anim').forEach(e => e.classList.remove('tg-search-wide', 'tg-search-anim'))
+        const group = topGroup()
+        if (group) {
+            group.style.maxWidth = ''
+        }
+    }
 
     const WIDTH_KEY = 'tabbyGroups.sideWidth'
     const handle = document.createElement('div')
@@ -694,7 +732,13 @@ function install (injector) {
         if (vertical && toolbar.nextElementSibling !== container) {
             container.before(toolbar)
         } else if (!vertical) {
+            narrowSearch()
             toolbar.remove()
+        }
+        // A hidden search (a narrow side bar) can keep its focus and no blur comes.
+        if (vertical && document.activeElement === search && !search.offsetWidth) {
+            search.blur()
+            narrowSearch()
         }
         if (!handle.isConnected) {
             document.body.appendChild(handle)

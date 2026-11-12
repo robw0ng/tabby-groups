@@ -24,7 +24,7 @@ It works when Tabby's tabs are on the left or the right. With tabs on the top or
 | Reload in place | A plugin `tabby-x` that puts `window.__tabbyX.reload()` on the page reloads without a Tabby restart (tabby-groups and tabby-remote do). After an update button's run, the plugins in its `reload` list reload by themselves in every Tabby window, and a notice says which ones did and which need a restart. With `"autoReload": false` in `tabby-groups.json`, the update toast only offers "Reload plugins" instead; `node claude/scripts/tabby-reload.mjs [--port 9222] tabby-groups tabby-remote` does the same from a script (exit 0 all reloaded, 3 some need a restart, 2 port closed). A change to a plugin's Angular providers still needs a restart. |
 | Folder line | Each tab shows its current folder under its title |
 | Claude Code state | A ring while Claude works; a dot when it finished while you were away; an amber "?" while it asks you a question and "!" while it asks for a permission (needs the Claude Code plugin's hooks). Group headers count all of them. |
-| Search | Matches titles, group names, folders, apps and tab numbers (`#12`). Enter opens the first match. |
+| Search | Matches titles, group names, folders, apps and tab numbers (`#12`). Enter opens the first match, Esc clears it. While it has focus the box takes the whole top row (the buttons beside it slide away) and shrinks back on blur, the text and the filter kept; instantly with reduced motion. |
 | Pins | A pinned group goes first in its scope; a tab pinned in a group goes first in that group |
 | Resize | Drag the side bar's inner edge |
 | Restart | Groups, colours, pins and folders come back. Claude Code and Codex sessions resume in their folder. |

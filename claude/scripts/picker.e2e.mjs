@@ -547,6 +547,43 @@ if (atStart.marked) {
   check('after Tabby rebuilds its bar, the tgTop buttons are back in the top row and the bottom copies hidden', rebuilt.top.length === rebuilt.marked && rebuilt.hidden === rebuilt.marked, rebuilt);
 }
 
+// The search box takes the whole top row while focused (the buttons slide out), and shrinks back on blur, text kept.
+const searchState = () => run(`() => {
+  const bar = document.querySelector('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar');
+  const input = bar.querySelector('.tg-search'), group = bar.querySelector(':scope > .tabs + .btn-group'), tb = bar.querySelector(':scope > .tg-toolbar');
+  const cs = getComputedStyle(group);
+  return { input: input.getBoundingClientRect().width, row: bar.clientWidth - parseFloat(getComputedStyle(tb).paddingLeft) - parseFloat(getComputedStyle(tb).paddingRight),
+    group: group.getBoundingClientRect().width, opacity: +cs.opacity, events: cs.pointerEvents, transition: cs.transitionDuration, value: input.value, focused: document.activeElement === input };
+}`);
+await run(`() => document.querySelector('.tg-search').blur()`);
+await sleep(400);
+const narrow = await searchState();
+await run(`() => { const i = document.querySelector('.tg-search'); i.focus(); i.value = 'o1'; i.dispatchEvent(new Event('input')) }`);
+await sleep(100);
+const midway = await searchState();
+await sleep(300);
+const wide = await searchState();
+check('the search grows smoothly: about halfway the buttons are partly gone', midway.group > 1 && midway.group < narrow.group - 1, { narrow, midway });
+check('focused, the search takes the whole top row and the buttons are hidden', Math.abs(wide.input - wide.row) < 2 && wide.group < 1 && wide.opacity === 0 && wide.events === 'none', { narrow, wide });
+await run(`() => document.querySelector('.tg-search').blur()`);
+await sleep(400);
+const back = await searchState();
+check('on blur it shrinks back with its text, and the buttons return', Math.abs(back.input - narrow.input) < 2 && back.group > 0 && back.opacity === 1 && back.value === 'o1', back);
+await run(`() => { const i = document.querySelector('.tg-search'); i.focus(); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) }`);
+await sleep(400);
+const esc = await searchState();
+check('Esc clears the search and blurs it', esc.value === '' && !esc.focused, esc);
+await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+const reduced = await run(`async () => {
+  const i = document.querySelector('.tg-search'), group = document.querySelector('.tab-bar > .tabs + .btn-group');
+  i.focus(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const out = { transition: getComputedStyle(group).transitionDuration, group: group.getBoundingClientRect().width };
+  i.blur(); return out;
+}`);
+await call('Emulation.setEmulatedMedia', { features: [] });
+check('with reduced motion, no transition: the row is full at once', reduced.transition.split(',').every((d) => parseFloat(d) === 0) && reduced.group < 1, reduced);
+await sleep(400);
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

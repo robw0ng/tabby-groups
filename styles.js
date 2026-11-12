@@ -134,6 +134,21 @@ const CSS = `
     position: sticky; top: 0; z-index: 2; align-self: stretch; align-items: center;
 }
 /*
+ * Search focused: the buttons beside it fade out and slide under its edge as their width closes (clipped, so nothing
+ * passes the bar's edge), and the search takes the whole row with the same gap on both sides (index.js sets their start width).
+ */
+.tabs-on-left > .tab-bar > .tabs + .btn-group, .tabs-on-right > .tab-bar > .tabs + .btn-group { transition: max-width 220ms ease-out, opacity 220ms ease-out; }
+.tabs-on-left > .tab-bar > .tg-toolbar, .tabs-on-right > .tab-bar > .tg-toolbar { transition: padding-right 220ms ease-out; }
+.tabs-on-left > .tab-bar.tg-search-anim > .tabs + .btn-group, .tabs-on-right > .tab-bar.tg-search-anim > .tabs + .btn-group { overflow: hidden; }
+.tabs-on-left > .tab-bar.tg-search-wide > .tabs + .btn-group, .tabs-on-right > .tab-bar.tg-search-wide > .tabs + .btn-group {
+    max-width: 0 !important; opacity: 0; pointer-events: none;
+}
+.tabs-on-left > .tab-bar.tg-search-wide > .tg-toolbar, .tabs-on-right > .tab-bar.tg-search-wide > .tg-toolbar { padding-right: 6px; }
+@media (prefers-reduced-motion: reduce) {
+    .tabs-on-left > .tab-bar > .tabs + .btn-group, .tabs-on-right > .tab-bar > .tabs + .btn-group,
+    .tabs-on-left > .tab-bar > .tg-toolbar, .tabs-on-right > .tab-bar > .tg-toolbar { transition: none; }
+}
+/*
  * One solid strip behind the whole top row, reaching up through the window-button space, so scrolled tabs
  * never show around or above the search box and buttons. A grid item, so it is exactly the row's height.
  */
