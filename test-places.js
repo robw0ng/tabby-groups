@@ -1,6 +1,6 @@
 // node test-places.js: checks where empty groups sit (places.js), with no Tabby. On screen: picker.e2e.mjs.
 const assert = require('assert')
-const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose } = require('./places')
+const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose, dropIndex } = require('./places')
 
 const tab = (name, group) => ({ name, __tg: group })
 const mk = (...gs) => new Map(gs.map(g => [g.name, { parent: null, id: g.name, ...g }]))
@@ -68,6 +68,18 @@ assert.strictEqual(groups.get('E').slot, 2, 'restored: after a and b')
     assert.strictEqual(focusAfterClose(list, [z, w], x, 'previous'), y, 'the first tab: the one below')
     assert.strictEqual(focusAfterClose(list, [z, w], z, 'next'), null, "next: Tabby's own choice")
     assert.strictEqual(focusAfterClose([x], [x], x, 'recent'), null, 'the last tab: nothing to show')
+}
+
+// A drop's index: beside its own place it stays; elsewhere it lands exactly at the line, up or down.
+{
+    const move = (list, from, to) => { const l = [...list]; l.splice(to, 0, ...l.splice(from, 1)); return l }
+    const list = ['a', 'b', 'c', 'x', 'd', 'e']
+    const x = list.indexOf('x')
+    assert.strictEqual(dropIndex(x, x - 1, true), x, 'after the tab above it: stays')
+    assert.strictEqual(dropIndex(x, x + 1, false), x, 'before the tab below it: stays')
+    for (const [anchor, after, want] of [[0, false, 'x,a,b,c,d,e'], [1, true, 'a,b,x,c,d,e'], [4, true, 'a,b,c,d,x,e'], [5, true, 'a,b,c,d,e,x'], [5, false, 'a,b,c,d,x,e']]) {
+        assert.strictEqual(move(list, x, dropIndex(x, anchor, after)).join(), want, `${after ? 'after' : 'before'} ${list[anchor]}`)
+    }
 }
 
 console.log('test-places: all passed')

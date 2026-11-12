@@ -12,7 +12,7 @@ const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
-const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose } = require('./places')
+const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
 const { findCode, smallMenu } = require('./tabmenu')
 
@@ -1473,7 +1473,16 @@ function install (injector) {
         const orig = root?.onTabsReordered
         if (orig && !Object.hasOwn(root, 'onTabsReordered')) {
             appRoot = root
-            root.onTabsReordered = event => cancelledDrop(event?.item?.data) ? undefined : orig.call(root, event)
+            root.onTabsReordered = event => {
+                const tab = event?.item?.data
+                // With tabs on the side, the plugin places a dropped tab itself (applyDrop). Tabby's index there counts
+                // tabs by screen position, where tabs hidden in a collapsed group (no height) sort first, so its move
+                // could land a slot or more off, and a drop beside the tab's own row would move it.
+                if (cancelledDrop(tab) || (sideBar() && app.tabs.includes(tab))) {
+                    return
+                }
+                return orig.call(root, event)
+            }
         }
     }
 
@@ -2214,11 +2223,7 @@ function install (injector) {
         if (!anchor || anchor === tab) {
             return
         }
-        let target = app.tabs.indexOf(anchor) + (after ? 1 : 0)
-        if (app.tabs.indexOf(tab) < target) {
-            target--
-        }
-        app.moveTabToIndex(tab, target)
+        app.moveTabToIndex(tab, dropIndex(app.tabs.indexOf(tab), app.tabs.indexOf(anchor), after))
     }
 
     /** Where an empty group shows (render), as [anchor tab, after]; `skip` are the moving tabs. */

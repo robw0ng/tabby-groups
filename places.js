@@ -138,4 +138,13 @@ function focusAfterClose (tabs, mru, closed, mode = 'recent') {
     return recent.find(t => closed.__tg && t.__tg === closed.__tg) ?? recent[0] ?? null
 }
 
-module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose }
+/**
+ * The list index a tab at `from` moves to, to land just before (or, with `after`, just after) the tab at `anchor`.
+ * The index counts the list without the tab, as a move does: a drop beside its own place gives `from` back.
+ */
+function dropIndex (from, anchor, after) {
+    const target = anchor + (after ? 1 : 0)
+    return from < target ? target - 1 : target
+}
+
+module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex }

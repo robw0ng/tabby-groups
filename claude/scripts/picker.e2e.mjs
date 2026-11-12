@@ -605,6 +605,32 @@ check('hovering a group header through redraws: its tooltip shows once and stays
 await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5, buttons: 0 });
 await sleep(300);
 
+// A tab dropped right beside its own row stays put, also with a collapsed group (hidden tabs once skewed Tabby's own
+// drop index, and the tab moved down).
+{
+  await run(`() => window.__tabbyGroups.setCollapsed('outer', true)`);
+  await sleep(500);
+  const order = async () => (await state()).tabs.map((t) => t.title).join('|');
+  const before = await order();
+  // The bug needs hidden tabs after the dragged one: the first shown row with a hidden row below it.
+  const at = await run(`() => { const rows = [...document.querySelectorAll('.tab-bar .tabs > tab-header')]; const k = rows.findIndex((r, i) => r.offsetHeight && rows.slice(i + 1).some(x => !x.offsetHeight)); if (k < 0) return null; const r = rows[k].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height } }`);
+  if (!at) throw new Error('picker.e2e: no shown tab above a collapsed group');
+  await mouse('mousePressed', at, 1);
+  for (let k = 1; k <= 10; k++) {
+    await mouse('mouseMoved', { x: at.x, y: at.y - k * 2 }, 1);
+    await sleep(25);
+  }
+  // Back to the row's own upper edge: the line between it and the tab above.
+  await mouse('mouseMoved', { x: at.x, y: at.y - at.h / 2 + 2 }, 1);
+  await sleep(300);
+  await mouse('mouseReleased', { x: at.x, y: at.y - at.h / 2 + 2 }, 0);
+  await sleep(1000);
+  const after = await order();
+  check('a tab dropped beside its own row, with a group collapsed, stays where it was', after === before, { before, after });
+  await run(`() => window.__tabbyGroups.setCollapsed('outer', false)`);
+  await sleep(500);
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
