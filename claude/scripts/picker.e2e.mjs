@@ -694,6 +694,35 @@ await sleep(300);
   await sleep(300);
 }
 
+// What a drag picks up stays in place, dimmed: a dragged subgroup's own rows only (not its parent's), and a dragged tab's row.
+{
+  const dragProbe = async (from, probe) => {
+    await mouse('mousePressed', from, 1);
+    for (let k = 1; k <= 8; k++) {
+      await mouse('mouseMoved', { x: from.x, y: from.y + k * 4 }, 1);
+      await sleep(25);
+    }
+    await sleep(200);
+    const seen = await run(probe);
+    await key('Escape');
+    await mouse('mouseReleased', { x: from.x, y: from.y + 32 }, 0);
+    await sleep(800);
+    return seen;
+  };
+  const sub = await dragProbe(await center('.tg-header[data-name="inner"] .tg-name'), `() => {
+    const v = document.querySelector('.tabs > .tg-veil')?.getBoundingClientRect();
+    const inner = document.querySelector('.tg-header[data-name="inner"] .tg-inner').getBoundingClientRect();
+    const foot = document.querySelector('.tg-foot[data-name="inner"] .tg-foot-inner').getBoundingClientRect();
+    return v ? { top: v.top - inner.top, bottom: v.bottom - foot.bottom, left: v.left - inner.left, right: v.right - inner.right } : null;
+  }`);
+  check("a dragged subgroup's veil covers its own panel exactly: header top to footer bottom, its own width", !!sub && [sub.top, sub.bottom, sub.left, sub.right].every((d) => Math.abs(d) < 1.5), sub);
+  check('the veil goes with the drag', !(await run(`() => !!document.querySelector('.tabs > .tg-veil')`)));
+  const tabAt = await run(`() => { const r = [...document.querySelectorAll('.tab-bar .tabs > tab-header')].find(x => x.offsetHeight).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } }`);
+  const tabDim = await dragProbe(tabAt, `() => { const p = document.querySelector('.tabs > tab-header.cdk-drag-placeholder'); const cs = p && getComputedStyle(p); return { placeholder: !!p, shown: !!p && p.offsetHeight > 0 && +cs.opacity > 0 && cs.visibility !== 'hidden', faded: p ? +getComputedStyle(p.querySelector(':scope > .name')).opacity : null } }`);
+  check("a dragged tab's own row stays visible, dimmed", tabDim.placeholder && tabDim.shown && tabDim.faded < 1, tabDim);
+  check('neither drag moved anything (Esc)', (await groupsNow()).some((g) => g.name === 'inner' && g.parent === 'outer'), await groupsNow());
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

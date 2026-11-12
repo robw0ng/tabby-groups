@@ -341,7 +341,19 @@ tab-header.active .tg-cwd { color: #d8d8d8; }
 /* Drop marks while dragging a tab in the side bar: a line between rows, or an outline on the tab to group with. */
 .tg-drop-line { position: fixed; z-index: 10000; height: 2px; border-radius: 1px; background: #86b7f7; pointer-events: none; }
 .tabs > tab-header.tg-drop-onto, .tabs > .tg-empty.tg-drop-onto { outline: 2px solid #86b7f7; outline-offset: -2px; border-radius: 6px; }
-.tabs > .tg-header.tg-dragging { opacity: 0.45; }
+/*
+ * What a drag picked up stays in place, dimmed. A dragged group: one veil over its own panel (index.js places it), so
+ * every part of the panel dims and nothing outside it. A dragged tab: its placeholder row, its box veiled and its content faded.
+ */
+.tabs.tg-veiled { position: relative; }
+.tg-veil {
+    position: absolute; pointer-events: none; border-radius: 8px; background: color-mix(in srgb, var(--tg-bg) 55%, transparent);
+}
+/* Doubled class: it must outrank the active last tab's own background rule. */
+body.tg-tab-drag .tab-bar .tabs > tab-header.cdk-drag-placeholder.cdk-drag-placeholder {
+    background-image: linear-gradient(color-mix(in srgb, var(--tg-bg) 55%, transparent), color-mix(in srgb, var(--tg-bg) 55%, transparent)) !important;
+}
+body.tg-tab-drag .tabs > tab-header.cdk-drag-placeholder > * { opacity: 0.45; }
 /* A pane dragged from a split (Ctrl+Shift) brings its own placeholder into the list; it would push the rows from under the pointer. */
 .tabs-on-left .tabs > .cdk-drag-placeholder:not(tab-header), .tabs-on-right .tabs > .cdk-drag-placeholder:not(tab-header) { display: none !important; }
 .tg-drag-ghost { position: fixed; z-index: 10001; pointer-events: none; padding: 4px 10px; border-radius: 6px; background: #2b2f36; color: #ffffff; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); }

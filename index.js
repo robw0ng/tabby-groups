@@ -996,10 +996,37 @@ function install (injector) {
                 decorate(r.el, r.tab, vertical)
             }
         })
+        placeVeil(rows)
         if (scroller) {
             scroller.scrollTop = scrollTop
         }
         observer.observe(container, { childList: true })
+    }
+
+    /*
+     * A dragged group stays in place under a veil (styles.js): one box over its own panel exactly, measured on the page
+     * (the gap differs in a narrow bar): a subgroup's panel starts at its header's inner part and ends at its footer bar
+     * (its inner part when folded); a top-level group's from its header to its last row, gap included. Its parent's side
+     * bands stay bright. Pointer events pass through it, to the drop targets below.
+     */
+    const veil = Object.assign(document.createElement('div'), { className: 'tg-veil' })
+    function placeVeil (rows) {
+        const own = draggedGroup ? rows.filter(r => !r.hidden && r.chain.includes(draggedGroup)) : []
+        if (!own.length || !container) {
+            veil.remove()
+            container?.classList.remove('tg-veiled')
+            return
+        }
+        container.classList.add('tg-veiled')
+        const box = container.getBoundingClientRect()
+        const head = own[0].el
+        const panel = head.querySelector(':scope > .tg-inner') ?? head
+        const last = own.at(-1).el
+        const end = last === head ? panel : last.querySelector(':scope > .tg-foot-inner') ?? last
+        const a = panel.getBoundingClientRect()
+        const bottom = end.getBoundingClientRect().bottom
+        Object.assign(veil.style, { top: a.top - box.top + 'px', left: a.left - box.left + 'px', width: a.width + 'px', height: Math.max(0, bottom - a.top) + 'px' })
+        container.append(veil)
     }
 
     /**
@@ -1209,6 +1236,9 @@ function install (injector) {
     function groupAtPoint (bar, x, y) {
         const list = bar.querySelector(':scope > .tabs')
         const row = list && [...list.children].find(r => {
+            if (r === veil) {
+                return false
+            }
             const b = r.getBoundingClientRect()
             return b.height > 0 && y >= b.top && y < b.bottom
         })
@@ -2331,8 +2361,8 @@ function install (injector) {
                 dropIntent = null
                 dragCancel = null
                 hideTip()
-                h.classList.add('tg-dragging')
                 document.body.classList.add('tg-tab-drag')
+                render()
                 ghost.textContent = g.name
                 document.body.appendChild(ghost)
             }
@@ -2350,8 +2380,8 @@ function install (injector) {
             const i = dragCancel?.live ? null : dropIntent
             draggedGroup = dropIntent = dragCancel = null
             ghost.remove()
-            h.classList.remove('tg-dragging')
             document.body.classList.remove('tg-tab-drag')
+            render()
             showDropMark()
             // The click that ends a drag must not also collapse the group. It fires before any timer.
             const swallow = ev => ev.stopPropagation()
@@ -2432,6 +2462,8 @@ function install (injector) {
 
     /** Returns Tabby's tab bar to stock: no group rows, icons, folder lines, classes or inline paint. */
     function clearDecorations () {
+        veil.remove()
+        document.querySelectorAll('.tg-veiled').forEach(e => e.classList.remove('tg-veiled'))
         document.querySelectorAll('.tg-header, .tg-foot, .tg-empty, .tg-icon, .tg-cwd, .tg-tab-pin, .tg-presence').forEach(e => e.remove())
         document.querySelectorAll('.tabs.tg-light').forEach(e => e.classList.remove('tg-light'))
         document.querySelectorAll('.tabs > tab-header').forEach(e => {
