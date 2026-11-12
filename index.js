@@ -14,7 +14,7 @@ const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
 const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
-const { findCode, transcriptOf, sessionRepo, smallMenu } = require('./tabmenu')
+const { findCode, transcriptOf, sessionRepo, gitTop, menuRepo, smallMenu } = require('./tabmenu')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -1534,10 +1534,16 @@ function install (injector) {
             const transcript = info?.kind === 'claude' && transcriptOf(info.sessionId)
             codeExe ??= findCode()
             const platform = injector.get(core.PlatformService)
+            const claudeRepo = transcript ? sessionRepo(transcript) : null
+            const repo = menuRepo({ cwd, claudeRepo, cwdRepo: !claudeRepo && cwd ? gitTop(cwd) : null })
             return smallMenu({
-                cwd, repo: transcript ? sessionRepo(transcript) : null, code: !!codeExe, grouped: !!tab.__tg,
+                cwd, repo, files: !!window.__tabbyFiles?.open, code: !!codeExe,
+                manager: { darwin: 'Finder', win32: 'Explorer' }[process.platform] ?? 'File manager',
+                pinned: tab.__tg ? !!tab.__tgPinned : !!tab.pinned, grouped: !!tab.__tg,
                 addToGroup: addToGroupMenu(tab), moveToWindow: moveToWindowMenu(tab), more: full,
             }, {
+                // A Files tab in that folder, right after this tab and in its group (tabby-files places it with placeAfter).
+                files: dir => window.__tabbyFiles?.open(dir, tab),
                 open: dir => platform.openPath(dir),
                 // VS Code itself, with no shell between (on Windows `code` is a batch file).
                 code: dir => {
@@ -1548,6 +1554,10 @@ function install (injector) {
                     child.unref()
                 },
                 rename: () => app.renameTab(tab),
+                // Tabby's pin toggle: inside a group it is the group's own pin (toggleTabPinned above).
+                pin: () => app.toggleTabPinned(tab),
+                // The same profile and folder: Tabby's duplicate, which this plugin files in the tab's group, right after it.
+                duplicate: () => app.duplicateTab(tab),
                 copy: text => platform.setClipboard({ text }),
                 closeGroup: () => closeGroup(tab.__tg),
             })

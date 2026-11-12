@@ -4,25 +4,55 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { findCode, foldersIn, transcriptOf, sessionRepo, smallMenu } = require('./tabmenu')
+const { execFileSync } = require('child_process')
+const { findCode, foldersIn, transcriptOf, sessionRepo, gitTop, menuRepo, smallMenu } = require('./tabmenu')
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-menu-'))
 try {
-    // Items, in order; Open in VS Code only with VS Code, Open repo only when it is not the folder, Close group only in a group.
+    // Items, in order. "Open in" and "Open repo in <name>" each offer Tabby Files (with tabby-files), Explorer or
+    // Finder, and VS Code (with code); Close group only in a group; the pin item names what it will do.
     const labels = items => items.map(i => i.type === 'separator' ? '—' : i.label)
     const called = []
-    const act = { open: d => called.push(['open', d]), code: d => called.push(['code', d]), rename: () => called.push(['rename']), copy: t => called.push(['copy', t]), closeGroup: () => called.push(['close']) }
+    const act = Object.fromEntries(['files', 'open', 'code', 'rename', 'pin', 'duplicate', 'copy', 'closeGroup'].map(k => [k, x => called.push(x === undefined ? [k] : [k, x])]))
     const more = [{ label: 'Duplicate' }]
-    let items = smallMenu({ cwd: tmp, repo: path.join(tmp, '..'), code: true, grouped: true, addToGroup: { label: 'Add to group', submenu: [] }, moveToWindow: { label: 'Move to window', submenu: [] }, more }, act)
-    assert.deepStrictEqual(labels(items), ['Open folder', 'Open in VS Code', 'Open repo', '—', 'Add to group', 'Rename', 'Copy path', '—', 'Move to window', 'Close group', '—', 'More options…'])
+    const repo = path.join(tmp, 'claude-stack')
+    let items = smallMenu({ cwd: tmp, repo, files: true, code: true, mac: false, pinned: false, grouped: true, addToGroup: { label: 'Add to group', submenu: [] }, moveToWindow: { label: 'Move to window', submenu: [] }, more }, act)
+    assert.deepStrictEqual(labels(items), ['Open in', 'Open repo in claude-stack', '—', 'Add to group', 'Rename', 'Pin', 'Duplicate', 'Copy path', '—', 'Move to window', 'Close group', '—', 'More options…'])
+    assert.deepStrictEqual(labels(items[0].submenu), ['Tabby Files', 'Explorer', 'VS Code'])
+    assert.deepStrictEqual(labels(items[1].submenu), ['Tabby Files', 'Explorer', 'VS Code'])
     assert.strictEqual(items.at(-1).submenu, more, 'More options… holds Tabby\'s whole menu as it is')
-    items.filter(i => i.click).forEach(i => i.click())
-    assert.deepStrictEqual(called, [['open', tmp], ['code', tmp], ['open', path.join(tmp, '..')], ['rename'], ['copy', tmp], ['close']])
-    items = smallMenu({ cwd: tmp, repo: tmp.toUpperCase(), code: false, grouped: false, more }, act)
-    assert.deepStrictEqual(labels(items), ['Open folder', '—', 'Rename', 'Copy path', '—', '—', 'More options…'], 'no VS Code, repo = folder, no group')
+    ;[...items[0].submenu, ...items[1].submenu, ...items.filter(i => i.click)].forEach(i => i.click())
+    assert.deepStrictEqual(called, [['files', tmp], ['open', tmp], ['code', tmp], ['files', repo], ['open', repo], ['code', repo],
+        ['rename'], ['pin'], ['duplicate'], ['copy', tmp], ['closeGroup']])
+    items = smallMenu({ cwd: tmp, repo: null, files: false, code: false, manager: 'Finder', pinned: true, grouped: false, moveToWindow: { label: 'Move to window' }, more }, act)
+    assert.deepStrictEqual(labels(items), ['Open in', '—', 'Rename', 'Unpin', 'Duplicate', 'Copy path', '—', 'Move to window', '—', 'More options…'], 'no repo, no group, pinned')
+    assert.deepStrictEqual(labels(items[0].submenu), ['Finder'], 'no tabby-files, no VS Code, macOS')
     items = smallMenu({ cwd: null, more }, act)
-    assert.strictEqual(items[0].enabled, false, 'no known folder: Open folder is off')
+    assert.strictEqual(items[0].enabled, false, 'no known folder: Open in is off')
     assert.strictEqual(items.find(i => i.label === 'Copy path').enabled, false)
+
+    // The repo: a Claude tab's working repo, else the folder's git repo; none when it is the folder itself.
+    const sub = path.join(tmp, 'work', 'src')
+    assert.strictEqual(menuRepo({ cwd: sub, claudeRepo: repo, cwdRepo: path.join(tmp, 'work') }), repo, 'Claude: the session\'s repo wins')
+    assert.strictEqual(menuRepo({ cwd: sub, claudeRepo: null, cwdRepo: path.join(tmp, 'work') }), path.join(tmp, 'work'), 'else the folder\'s repo')
+    assert.strictEqual(menuRepo({ cwd: repo, claudeRepo: repo.toUpperCase(), cwdRepo: null }), null, 'the same folder: hidden')
+    assert.strictEqual(menuRepo({ cwd: sub, claudeRepo: null, cwdRepo: null }), null, 'no repo: hidden')
+    const root = path.parse(tmp).root
+    assert.strictEqual(smallMenu({ cwd: tmp, repo: root, more }, act)[1].label, `Open repo in ${root}`, 'a repo at a drive root: its path')
+    // gitTop asks git itself (no shell); outside a repo, null.
+    let hasGit = true
+    try {
+        execFileSync('git', ['--version'], { stdio: 'ignore' })
+    } catch {
+        hasGit = false
+    }
+    if (hasGit) {
+        const g = path.join(tmp, 'g')
+        fs.mkdirSync(path.join(g, 'deep'), { recursive: true })
+        execFileSync('git', ['init', '-q', g])
+        assert.strictEqual(gitTop(path.join(g, 'deep')).toLowerCase(), fs.realpathSync(g).toLowerCase())
+        assert.strictEqual(gitTop(path.join(tmp, 'nope')), null)
+    }
 
     // VS Code: on Windows, Code.exe beside the bin folder that has code.cmd; elsewhere the code script on PATH.
     const bin = path.join(tmp, 'VS Code', 'bin')

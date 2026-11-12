@@ -129,18 +129,56 @@ function sessionRepo (file) {
 const samePath = (a, b) => !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
 
 /**
- * The small menu, in Tabby's menu item format. `cwd`: the tab's folder; `repo`: a Claude tab's repo (shown when it is
- * not the folder); `code`: whether VS Code is there; `addToGroup` / `moveToWindow`: the plugin's own submenus;
- * `more`: Tabby's full menu; `act`: { open(dir), code(dir), rename(), copy(text), closeGroup() }.
+ * The git repo `dir` is in (`git rev-parse --show-toplevel`, no shell), or null. Cached per folder: the call blocks, and
+ * on a network drive it can take seconds.
+ * ponytail: the cache lives until a reload — a folder made a repo later shows after the next plugin reload.
  */
-function smallMenu ({ cwd, repo, code, grouped, addToGroup, moveToWindow, more }, act) {
+const gitTops = new Map()
+function gitTop (dir) {
+    if (!gitTops.has(dir)) {
+        gitTops.set(dir, askGit(dir))
+    }
+    return gitTops.get(dir)
+}
+function askGit (dir) {
+    try {
+        const out = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
+            { encoding: 'utf8', timeout: 3000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+        return out ? path.resolve(out) : null
+    } catch {
+        return null
+    }
+}
+
+/**
+ * The repo "Open repo in" offers: for a Claude tab the session's working repo (sessionRepo), else the git repo of the
+ * tab's folder. Null (no item) when there is none, or when it is the tab's folder itself.
+ */
+function menuRepo ({ cwd, claudeRepo, cwdRepo }) {
+    const repo = claudeRepo || cwdRepo || null
+    return repo && !samePath(repo, cwd) ? repo : null
+}
+
+/**
+ * The small menu, in Tabby's menu item format. `cwd`: the tab's folder; `repo`: from menuRepo; `files`: whether a
+ * Files tab can open (tabby-groups' sibling plugin); `code`: whether VS Code is there; `manager`: the file manager's name;
+ * `pinned`: the tab's pin; `addToGroup` / `moveToWindow`: the plugin's own submenus; `more`: Tabby's full menu;
+ * `act`: { files(dir), open(dir), code(dir), rename(), pin(), duplicate(), copy(text), closeGroup() }.
+ */
+function smallMenu ({ cwd, repo, files, code, manager = 'Explorer', pinned, grouped, addToGroup, moveToWindow, more }, act) {
+    const openIn = dir => [
+        ...files ? [{ label: 'Tabby Files', click: () => act.files(dir) }] : [],
+        { label: manager, click: () => act.open(dir) },
+        ...code ? [{ label: 'VS Code', click: () => act.code(dir) }] : [],
+    ]
     return [
-        { label: 'Open folder', enabled: !!cwd, click: () => act.open(cwd) },
-        ...code && cwd ? [{ label: 'Open in VS Code', click: () => act.code(cwd) }] : [],
-        ...repo && !samePath(repo, cwd) ? [{ label: 'Open repo', click: () => act.open(repo) }] : [],
+        { label: 'Open in', enabled: !!cwd, submenu: cwd ? openIn(cwd) : [] },
+        ...repo ? [{ label: `Open repo in ${path.basename(repo) || repo}`, submenu: openIn(repo) }] : [],
         { type: 'separator' },
         ...addToGroup ? [addToGroup] : [],
         { label: 'Rename', click: () => act.rename() },
+        { label: pinned ? 'Unpin' : 'Pin', click: () => act.pin() },
+        { label: 'Duplicate', click: () => act.duplicate() },
         { label: 'Copy path', enabled: !!cwd, click: () => act.copy(cwd) },
         { type: 'separator' },
         ...moveToWindow ? [moveToWindow] : [],
@@ -150,4 +188,4 @@ function smallMenu ({ cwd, repo, code, grouped, addToGroup, moveToWindow, more }
     ]
 }
 
-module.exports = { findCode, foldersIn, repoRoot, transcriptOf, sessionRepo, smallMenu }
+module.exports = { findCode, foldersIn, repoRoot, transcriptOf, sessionRepo, gitTop, menuRepo, smallMenu }
