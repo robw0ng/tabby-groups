@@ -59,11 +59,22 @@ function install (injector) {
     const titleOf = tab => tab.customTitle || tab.title
     const changed = () => app.emitTabsChanged()
     const IS_WIN = process.platform === 'win32'
-    /** The shell of Tabby's default profile (Settings → Profiles & connections → Default profile), or null when it is not a local shell. */
-    async function defaultShell () {
+    /**
+     * The shell of Tabby's default profile (Settings → Profiles & connections → Default profile), or null when it is not a
+     * local shell. Kept 5 s, until the config changes: Tabby's tab save asks once per Claude pane, and reading the
+     * profiles each time cost a second every two minutes.
+     */
+    let shellCache = null
+    function defaultShell () {
         const id = injector.get(core.ConfigService).store.terminal?.profile
-        const profile = (await injector.get(core.ProfilesService).getProfiles()).find(p => p.id === id)
-        return profile?.type === 'local' && profile.options?.command ? { command: profile.options.command, args: profile.options.args ?? [] } : null
+        if (!shellCache || shellCache.id !== id || Date.now() - shellCache.at > 5000) {
+            shellCache = { id, at: Date.now(), value: (async () => {
+                const profile = (await injector.get(core.ProfilesService).getProfiles()).find(p => p.id === id)
+                return profile?.type === 'local' && profile.options?.command ? { command: profile.options.command, args: profile.options.args ?? [] } : null
+            })() }
+        }
+        // A copy, so a caller that changes it (the tab save sets a token's args) cannot change the cache.
+        return shellCache.value.then(v => v && { command: v.command, args: [...v.args] })
     }
     // Set by dispose(). Work still in flight (a process-tree read, a shell wait) must not draw over the next install.
     let disposed = false
@@ -2057,6 +2068,7 @@ function install (injector) {
     // Neighbours for the empty groups a reload handed over, before the first change moves anything.
     trackSlots(app.tabs, groups, marks)
     const subs = [
+        injector.get(core.ConfigService).changed$.subscribe(() => { shellCache = null }),
         app.tabOpened$.subscribe(watch),
         app.tabOpened$.subscribe(tab => {
             const path = tab.__tgRestore
