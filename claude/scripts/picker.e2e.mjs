@@ -394,7 +394,7 @@ await sleep(1000);
 check('closeGroup takes a name or a path; the groups go', closed2 === true && !(await groupsNow()).some((g) => ['tooling', 'web', 'owners', 'leads'].includes(g.name)), await groupsNow());
 
 // The small tab menu: Tabby builds it in the tab header (a native menu, so the items are read from the builder and
-// clicked through it). A tab in a group, with a folder inside this repo, so "Open repo in tabby-groups" shows.
+// clicked through it). A tab in a group, with a folder inside this repo.
 const menu = await run(`async () => {
   const app = ${APP};
   const tg = window.__tabbyGroups;
@@ -412,7 +412,7 @@ const menu = await run(`async () => {
   // The group goes whatever fails, so a later step starts clean.
   try {
     const items = await builder(by('m1'));
-    Object.assign(out, { small: labels(items), openIn: labels(items[0].submenu ?? []), repo: items.find(i => /^Open repo in /.test(i.label ?? ''))?.label ?? null, more: labels(items.at(-1)?.submenu ?? []) });
+    Object.assign(out, { small: labels(items), openIn: labels(items[0].submenu ?? []), more: labels(items.at(-1)?.submenu ?? []) });
     items.find(i => i.label === 'Pin').click();
     out.pinnedNow = labels(await builder(by('m1'))).includes('Unpin');
     (await builder(by('m1'))).find(i => i.label === 'Unpin').click();
@@ -429,10 +429,8 @@ const menu = await run(`async () => {
   return out;
 }`);
 const menuOrder = ['Open in', '—', 'Add to group', 'Rename', 'Pin', 'Duplicate', 'Copy path', '—', 'Move to window', 'Close group', '—', 'More options…'];
-check('a tab\'s right-click menu is the small one, in order', JSON.stringify((menu.small ?? []).filter((l) => !/^Open repo in /.test(l))) === JSON.stringify(menuOrder), menu.small);
+check('a tab\'s right-click menu is the small one, in order', JSON.stringify(menu.small ?? []) === JSON.stringify(menuOrder), menu.small);
 check('Open in offers Explorer or Finder (Tabby Files and VS Code when there)', (menu.openIn ?? []).includes(process.platform === 'darwin' ? 'Finder' : 'Explorer'), menu.openIn);
-const checkout = path.basename(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'));
-check(`a tab inside a repo subfolder offers "Open repo in ${checkout}"`, menu.repo === `Open repo in ${checkout}`, menu);
 check('Pin pins the tab (the item then reads Unpin)', menu.pinnedNow, menu);
 check('Duplicate puts the copy right after the tab, in its group', menu.dup?.right && menu.dup?.sameGroup, menu);
 check('More options… holds Tabby\'s full menu (Duplicate, Close, the plugin\'s own items)', ['Duplicate', 'Close', 'Add to group', 'Move to window'].every((l) => menu.more?.includes(l)), menu);
@@ -611,7 +609,7 @@ await sleep(300);
 await rightClick(p.tab);
 s = await state();
 check('right-click on a tab opens no picker', !s.picker);
-console.log('By eye: the menu now open is the small one: Open in > Explorer/Finder, Tabby Files and VS Code open the tab\'s folder (a Files tab lands right after the tab, in its group); on a Claude tab working in another repo, Open repo in <name> > the same three open that repo; Arrow keys and Enter work in it; Shift+F10 (or the menu key) opens it for the active tab, also with the terminal focused; Settings > Tab groups > Small tab menu off brings back Tabby\'s full menu.');
+console.log('By eye: the menu now open is the small one: Open in > Explorer/Finder, Tabby Files and VS Code open the tab\'s folder (a Files tab lands right after the tab, in its group); Arrow keys and Enter work in it; Shift+F10 (or the menu key) opens it for the active tab, also with the terminal focused; Settings > Tab groups > Small tab menu off brings back Tabby\'s full menu.');
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
 console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space outside every group still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads; with tabby-files setting tgTop on its Files button, that button sits in the top row after + (not in the bottom bar), and with tabs on top it is back in Tabby\'s toolbar.');

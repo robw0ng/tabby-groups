@@ -1,7 +1,6 @@
-// The small tab menu (index.js wraps Tabby's tab-header menu): its items, where VS Code is, and a Claude session's repo.
+// The small tab menu (index.js wraps Tabby's tab-header menu): its items, and where VS Code is.
 const fs = require('fs')
 const path = require('path')
-const os = require('os')
 
 /**
  * VS Code found through `code` on PATH, as a program to start with no shell: on Windows `code` is bin\code.cmd, a
@@ -21,159 +20,23 @@ function findCode (env = process.env, isWin = process.platform === 'win32') {
     return null
 }
 
-// Git Bash writes C:\x as /c/x, and a shell path can start with ~.
-function native (p, isWin = process.platform === 'win32') {
-    if (p.startsWith('~')) {
-        p = path.join(os.homedir(), p.slice(1))
-    }
-    return isWin ? p.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : p
-}
-
-/** The folders a tool call names, as claude-sessions' peek reads them: a file's folder, or the dir of `git -C <dir>` / `cd <dir>`. */
-function foldersIn (input) {
-    const out = ['file_path', 'notebook_path', 'path'].map(k => input[k]).filter(v => typeof v === 'string')
-    const m = typeof input.command === 'string' && input.command.match(/(?:git\s+-C|\bcd)\s+("[^"]+"|'[^']+'|[^\s;&|]+)/)
-    if (m) {
-        out.push(m[1].replace(/^["']|["']$/g, ''))
-    }
-    return out.map(p => native(p)).flatMap(p => {
-        try {
-            return [fs.statSync(p).isDirectory() ? p : path.dirname(p)]
-        } catch {
-            return []
-        }
-    })
-}
-
-/** The nearest folder at or above `dir` with a .git (a folder, or a worktree's file). */
-function repoRoot (dir) {
-    for (let d = path.resolve(dir); ; d = path.dirname(d)) {
-        if (fs.existsSync(path.join(d, '.git'))) {
-            return d
-        }
-        if (path.dirname(d) === d) {
-            return null
-        }
-    }
-}
-
-/** A Claude Code session's transcript: <config>/projects/<folder>/<id>.jsonl. */
-function transcriptOf (sessionId, configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')) {
-    if (!/^[\w-]+$/.test(sessionId ?? '')) {
-        return null
-    }
-    const projects = path.join(configDir, 'projects')
-    try {
-        for (const d of fs.readdirSync(projects)) {
-            const f = path.join(projects, d, sessionId + '.jsonl')
-            if (fs.existsSync(f)) {
-                return f
-            }
-        }
-    } catch { }
-    return null
-}
-
 /**
- * The repo a Claude session works in, as peek finds it: the repo of the newest folder its tool calls named, from the
- * transcript's last 1 MB. The transcript is Claude Code's own format, so a line that does not parse is skipped.
- * ponytail: tries at most 20 different folders — raise it if sessions often end on many files outside any repo.
- */
-function sessionRepo (file) {
-    let text
-    try {
-        const fd = fs.openSync(file, 'r')
-        try {
-            const size = fs.fstatSync(fd).size
-            const n = Math.min(size, 1 << 20)
-            const buf = Buffer.alloc(n)
-            fs.readSync(fd, buf, 0, n, size - n)
-            text = buf.toString('utf8')
-        } finally {
-            fs.closeSync(fd)
-        }
-    } catch {
-        return null
-    }
-    const lines = text.split('\n')
-    const tried = new Set()
-    for (let i = lines.length - 1; i >= 0; i--) {
-        let e
-        try {
-            e = JSON.parse(lines[i])
-        } catch {
-            continue
-        }
-        if (e?.type !== 'assistant' || e.isSidechain || !Array.isArray(e.message?.content)) {
-            continue
-        }
-        for (const p of [...e.message.content].reverse()) {
-            for (const d of p?.type === 'tool_use' ? foldersIn(p.input ?? {}) : []) {
-                if (tried.has(d)) {
-                    continue
-                }
-                if (tried.size >= 20) {
-                    return null
-                }
-                tried.add(d)
-                const root = repoRoot(d)
-                if (root) {
-                    return root
-                }
-            }
-        }
-    }
-    return null
-}
-
-const samePath = (a, b) => !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
-
-/**
- * The git repo `dir` is in (`git rev-parse --show-toplevel`, no shell), or null. Cached per folder: the call blocks, and
- * on a network drive it can take seconds.
- * ponytail: the cache lives until a reload — a folder made a repo later shows after the next plugin reload.
- */
-const gitTops = new Map()
-function gitTop (dir) {
-    if (!gitTops.has(dir)) {
-        gitTops.set(dir, askGit(dir))
-    }
-    return gitTops.get(dir)
-}
-function askGit (dir) {
-    try {
-        const out = require('child_process').execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
-            { encoding: 'utf8', timeout: 3000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-        return out ? path.resolve(out) : null
-    } catch {
-        return null
-    }
-}
-
-/**
- * The repo "Open repo in" offers: for a Claude tab the session's working repo (sessionRepo), else the git repo of the
- * tab's folder. Null (no item) when there is none, or when it is the tab's folder itself.
- */
-function menuRepo ({ cwd, claudeRepo, cwdRepo }) {
-    const repo = claudeRepo || cwdRepo || null
-    return repo && !samePath(repo, cwd) ? repo : null
-}
-
-/**
- * The small menu, in Tabby's menu item format. `cwd`: the tab's folder; `repo`: from menuRepo; `files`: whether a
- * Files tab can open (tabby-groups' sibling plugin); `code`: whether VS Code is there; `manager`: the file manager's name;
+ * The small menu, in Tabby's menu item format. `cwd`: the tab's folder; `files`: whether a Files tab can open
+ * (tabby-groups' sibling plugin); `code`: whether VS Code is there; `manager`: the file manager's name;
  * `pinned`: the tab's pin; `addToGroup` / `moveToWindow`: the plugin's own submenus; `more`: Tabby's full menu;
  * `act`: { files(dir), open(dir), code(dir), rename(), pin(), duplicate(), copy(text), closeGroup() }.
  */
-function smallMenu ({ cwd, repo, files, code, manager = 'Explorer', pinned, grouped, addToGroup, moveToWindow, more }, act) {
-    const openIn = dir => [
-        ...files ? [{ label: 'Tabby Files', click: () => act.files(dir) }] : [],
-        { label: manager, click: () => act.open(dir) },
-        ...code ? [{ label: 'VS Code', click: () => act.code(dir) }] : [],
-    ]
+function smallMenu ({ cwd, files, code, manager = 'Explorer', pinned, grouped, addToGroup, moveToWindow, more }, act) {
     return [
-        { label: 'Open in', enabled: !!cwd, submenu: cwd ? openIn(cwd) : [] },
-        ...repo ? [{ label: `Open repo in ${path.basename(repo) || repo}`, submenu: openIn(repo) }] : [],
+        {
+            label: 'Open in',
+            enabled: !!cwd,
+            submenu: !cwd ? [] : [
+                ...files ? [{ label: 'Tabby Files', click: () => act.files(cwd) }] : [],
+                { label: manager, click: () => act.open(cwd) },
+                ...code ? [{ label: 'VS Code', click: () => act.code(cwd) }] : [],
+            ],
+        },
         { type: 'separator' },
         ...addToGroup ? [addToGroup] : [],
         { label: 'Rename', click: () => act.rename() },
@@ -188,4 +51,4 @@ function smallMenu ({ cwd, repo, files, code, manager = 'Explorer', pinned, grou
     ]
 }
 
-module.exports = { findCode, foldersIn, repoRoot, transcriptOf, sessionRepo, gitTop, menuRepo, smallMenu }
+module.exports = { findCode, smallMenu }

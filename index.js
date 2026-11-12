@@ -14,7 +14,7 @@ const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
 const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
-const { findCode, transcriptOf, sessionRepo, gitTop, menuRepo, smallMenu } = require('./tabmenu')
+const { findCode, smallMenu } = require('./tabmenu')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -1651,13 +1651,10 @@ function install (injector) {
             const tab = top(this.tab)
             const info = (tab.getFocusedTab?.() ?? tab.getAllTabs?.()[0] ?? tab).__tgInfo
             const cwd = info?.cwd && require('fs').existsSync(info.cwd) ? info.cwd : null
-            const transcript = info?.kind === 'claude' && transcriptOf(info.sessionId)
             codeExe ??= findCode()
             const platform = injector.get(core.PlatformService)
-            const claudeRepo = transcript ? sessionRepo(transcript) : null
-            const repo = menuRepo({ cwd, claudeRepo, cwdRepo: !claudeRepo && cwd ? gitTop(cwd) : null })
             return smallMenu({
-                cwd, repo, files: !!window.__tabbyFiles?.open, code: !!codeExe,
+                cwd, files: !!window.__tabbyFiles?.open, code: !!codeExe,
                 manager: { darwin: 'Finder', win32: 'Explorer' }[process.platform] ?? 'File manager',
                 pinned: tab.__tg ? !!tab.__tgPinned : !!tab.pinned, grouped: !!tab.__tg,
                 addToGroup: addToGroupMenu(tab), moveToWindow: moveToWindowMenu(tab), more: full,
