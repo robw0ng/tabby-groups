@@ -1077,10 +1077,16 @@ function install (injector) {
     }, 500)
     schemeQuery.addEventListener('change', onScheme)
     function lightBar (el) {
-        if (lightOf?.el !== el) {
-            lightOf = { el, value: isLightBg(getComputedStyle(el).getPropertyValue('--tg-bg')) }
+        if (lightOf?.el === el) {
+            return lightOf.value
         }
-        return lightOf.value
+        const style = getComputedStyle(el)
+        const value = isLightBg(style.getPropertyValue('--tg-bg'))
+        // Kept only once Tabby's theme is on: before that the colour falls back to dark, and would stay wrong.
+        if (style.getPropertyValue('--theme-bg-more-2').trim()) {
+            lightOf = { el, value }
+        }
+        return value
     }
 
     /** Whether a CSS colour is light (relative luminance over 0.5); a canvas turns any CSS colour into #rrggbb. */
