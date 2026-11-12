@@ -481,6 +481,41 @@ check('a double-click on the free space outside every group still opens a tab th
 await run(`async (opened) => { const app = ${APP}; window.__tabbyGroups.deleteGroup('dblempty'); if (opened) await app.closeTab(app.tabs.at(-1), false, true) }`, opened);
 await sleep(800);
 
+// A toolbar button marked tgTop: true shows in the top row after + and the profile button, with the same height row.
+const topBtn = await run(`async () => {
+  const core = require('tabby-core');
+  const inj = require('@angular/core').ɵgetLContext(document.querySelector('app-root')).lView[9];
+  const providers = inj.get(core.ToolbarButtonProvider);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const row = () => document.querySelector('.tab-bar > .tabs + .btn-group');
+  const before = row().getBoundingClientRect().height;
+  const fake = { provide: () => [{ icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></svg>', title: 'tgTop e2e', tgTop: true, weight: 1, click: () => { window.__tgTopClicked = true } }] };
+  providers.push(fake);
+  const out = {};
+  try {
+    window.__tabbyGroups.setCollapsed('outer', false); await sleep(500);
+    const btn = row().querySelector('.tg-top-button[aria-label="tgTop e2e"]');
+    out.shown = !!btn;
+    out.last = !!btn && btn.parentElement.parentElement === row() && !btn.parentElement.nextElementSibling;
+    out.sameHeight = Math.abs(row().getBoundingClientRect().height - before) < 1;
+    btn?.click();
+    out.clicked = !!window.__tgTopClicked;
+  } finally {
+    providers.splice(providers.indexOf(fake), 1);
+    delete window.__tgTopClicked;
+    window.__tabbyGroups.setCollapsed('outer', false); await sleep(500);
+  }
+  out.goneAfter = !row().querySelector('.tg-top-button[aria-label="tgTop e2e"]');
+  return out;
+}`);
+check('a tgTop toolbar button shows at the end of the top row, which keeps its height', topBtn.shown && topBtn.last && topBtn.sameHeight, topBtn);
+check('its click runs the button\'s own click', topBtn.clicked, topBtn);
+check('it goes when its plugin no longer provides it', topBtn.goneAfter, topBtn);
+// Tabby builds its bottom bar once, so only a tgTop button there from the start (Files, with tabby-files) shows the hiding.
+const moved = await run(`() => ({ top: [...document.querySelectorAll('.tab-bar > .tabs + .btn-group .tg-top-button')].map(b => b.dataset.tgTip),
+  hidden: document.querySelectorAll('.tab-bar > .btn-space + .btn-group > .d-flex.tg-moved').length })`);
+if (moved.top.length) check('a tgTop button from the start is hidden in the bottom bar (no second copy)', moved.hidden === moved.top.length, moved);
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();
@@ -488,6 +523,6 @@ check('right-click on a tab opens no picker', !s.picker);
 console.log('By eye: the menu now open is the small one: Open in > Explorer/Finder, Tabby Files and VS Code open the tab\'s folder (a Files tab lands right after the tab, in its group); on a Claude tab working in another repo, Open repo in <name> > the same three open that repo; Arrow keys and Enter work in it; Shift+F10 (or the menu key) opens it for the active tab, also with the terminal focused; Settings > Tab groups > Small tab menu off brings back Tabby\'s full menu.');
 
 for (const r of results) console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' ' + JSON.stringify(r.detail ?? '')}`);
-console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space outside every group still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads.');
+console.log('By eye: Tabby\'s tab menu is open now (Esc closes it); the picker is compact (a muted "+ New tab" title, rows about as tall as Tabby\'s own menu, thin separators, no labels); each row shows its icon: a profile\'s own (as in Tabby\'s profile menu), a pin\'s, the Files folder, the group glyph with a "+"; a Files tab row with tabby-files installed; Settings > Tab groups > New-tab picker: a pin switch adds that profile to the picker and off removes it; pinned rows from tabby-groups.json "picker"; a pinned command row lands in its group at once; double-click on free space outside every group still opens the default profile; the empty groups made now (mid, and the subgroup after inner) come back after a Tabby restart, each in its place; after the upgrade to group ids, every group comes back with its parent, colour, pin and tabs, and a tabby-groups-backup-<time>.json sits next to tabby-groups.json; in a side bar narrowed under 130px, an empty group\'s header shows a small + (no arrow) inside its panel; the phone side bar (tabby-remote) still loads; with tabby-files setting tgTop on its Files button, that button sits in the top row after + (not in the bottom bar), and with tabs on top it is back in Tabby\'s toolbar.');
 ws.close();
 process.exit(results.every((r) => r.ok) ? 0 : 1);

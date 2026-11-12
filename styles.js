@@ -224,6 +224,9 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
 }
 /* The user's toolbar buttons (tabby-groups.json "buttons"), before Tabby's own right-hand buttons. */
 .tg-buttons { display: flex; flex: none; }
+/* A tgTop toolbar button: its own button in the top row, and Tabby's copy in the bottom bar hidden. */
+.tg-top-buttons { display: contents; }
+.tg-moved { display: none !important; }
 .tg-buttons > .btn { height: 38px; }
 .tg-button { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .tg-button > svg, .tg-button > .tg-emoji { width: 14px; height: 14px; }

@@ -700,7 +700,56 @@ function install (injector) {
             document.body.appendChild(handle)
         }
         buttonBar.mount()
+        mountTopButtons(vertical)
         placeHandle()
+    }
+
+    /*
+     * A toolbar button another plugin marks `tgTop: true` (an extra property on its ToolbarButtonProvider item) sits in the
+     * side bar's top row, after Tabby's + and profile buttons, instead of the bottom bar: the same icon, title and click.
+     * Tabby turns buttons into commands and drops the mark, so its own copy in the bottom bar (in its `.d-flex` wrapper) is
+     * found by its icon and hidden; Tabby builds that bar once, so the mark stays. A button of weight 0 or less is in the
+     * top row already. With tabs on top or bottom, Tabby's toolbar stays as it is.
+     */
+    const topButtonsEl = Object.assign(document.createElement('span'), { className: 'tg-top-buttons' })
+    let topButtonsKey = null
+    let topButtons = []
+    const parsedHtml = html => Object.assign(document.createElement('div'), { innerHTML: html ?? '' }).innerHTML
+    function mountTopButtons (vertical) {
+        const top = vertical && document.querySelector('.tab-bar > .tabs + .btn-group')
+        const providers = injector.get(core.ConfigService).enabledServices(injector.get(core.ToolbarButtonProvider, []))
+        topButtons = !top ? [] : providers.flatMap(p => {
+            try {
+                const items = p.provide()
+                return Array.isArray(items) ? items.filter(b => b?.tgTop && (b.weight ?? 0) > 0) : []
+            } catch {
+                return []
+            }
+        })
+        const icons = new Set(topButtons.map(b => parsedHtml(b.icon)))
+        document.querySelectorAll('.tab-bar > .btn-space + .btn-group > .d-flex').forEach(el => {
+            const button = el.querySelector(':scope > button')
+            el.classList.toggle('tg-moved', !!top && !!button && icons.has(button.innerHTML))
+        })
+        if (!topButtons.length) {
+            topButtonsEl.remove()
+            topButtonsKey = null
+            return
+        }
+        const key = topButtons.map(b => `${b.title}\n${b.icon}`).join('\n\n')
+        if (key !== topButtonsKey) {
+            topButtonsKey = key
+            topButtonsEl.replaceChildren(...topButtons.map((b, k) => {
+                const el = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-top-button', innerHTML: b.icon ?? '' })
+                el.dataset.tgTip = el.ariaLabel = b.title ?? ''
+                // The provider's latest button: a provider may hand out new objects with a new click.
+                el.addEventListener('click', () => topButtons[k]?.click?.())
+                return el
+            }))
+        }
+        if (topButtonsEl.parentElement !== top || topButtonsEl.nextSibling) {
+            top.append(topButtonsEl)
+        }
     }
 
     function render () {
@@ -2318,6 +2367,8 @@ function install (injector) {
         inbox.dispose()
         userIconsWatch?.close()
         buttonBar.dispose()
+        topButtonsEl.remove()
+        document.querySelectorAll('.tg-moved').forEach(e => e.classList.remove('tg-moved'))
         windowsApi.dispose()
         style.remove()
         const i = menuProviders.indexOf(menuProvider)

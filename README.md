@@ -72,6 +72,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 | `placeAfter(newTab, fromTab)` | For a tab opened from another tab (a Files tab from a shell): files `newTab` in `fromTab`'s group and moves it right after `fromTab`; at the top level when `fromTab` has no group (after Tabby's pinned tabs, if `fromTab` is one; the new tab is not pinned). Either can be a pane of a split tab. Returns false when either tab is not open, or both are the same tab. |
 | `setTabPinned(tab, pinned)` | Pins a tab inside its group |
 | `drop(source, target, where)` | A drag and drop without a mouse, with the same rules |
+| `tgTop: true` on a `ToolbarButtonProvider` item (weight above 0) | For another plugin: with tabs on the side, its toolbar button shows in the top row after Tabby's + and profile buttons instead of the bottom bar (same icon, title and click). With tabs on top or bottom, nothing changes. |
 | `list()` | All groups in side-bar order: `id`, `name`, `path`, `parent` (the parent's name), `parentId`, colour, pin, fold, their tabs and Claude Code counts |
 | `markSeen(tab)` | Clears a tab's "finished while you were away" dot |
 | `tabText(name, lines = 30)` | The last `lines` non-empty screen lines of the one tab `name` names (as `say`: a title, else a part of one, or `#<n>`), as plain text. Read-only. Null when none or several match, or for a restored tab that was not opened yet. CLI: `claude/scripts/tab-read.mjs`. |
