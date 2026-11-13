@@ -776,6 +776,28 @@ await sleep(300);
   check('a question in the text: no pulse, counted as "1 asking"', text.pulse !== null && !text.blocked && text.pulse !== 'tg-blocked' && /1 asking/.test(text.roll) && !/blocked/.test(text.roll), text);
 }
 
+// A new tab that becomes the active one scrolls into view (when the list is long enough to scroll).
+{
+  const seen = await run(`async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const app = ${APP};
+    const bar = document.querySelector('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar');
+    if (bar.scrollHeight <= bar.clientHeight + 40) return { skipped: true };
+    bar.scrollTop = 0;
+    await window.__tabbyGroups.open({ title: 'scroll-new' });
+    await sleep(600);
+    const tab = app.tabs.find(t => (t.customTitle || t.title) === 'scroll-new');
+    const r = bar.querySelectorAll(':scope > .tabs > tab-header')[app.tabs.indexOf(tab)].getBoundingClientRect();
+    const above = Math.max(...[':scope > .tg-toolbar', ':scope > .tabs + .btn-group'].map(q => bar.querySelector(q)).filter(e => e?.offsetHeight).map(e => e.getBoundingClientRect().bottom));
+    const below = bar.querySelector(':scope > .btn-space + .btn-group')?.getBoundingClientRect().top ?? bar.getBoundingClientRect().bottom;
+    const out = { inView: r.top >= above - 1 && r.bottom <= below + 1, scrolled: bar.scrollTop > 0 };
+    await app.closeTab(tab, false, true);
+    return out;
+  }`);
+  if (seen.skipped) console.log("note: the side bar did not scroll (few tabs), so the new-tab scroll check was skipped");
+  else check('a new active tab scrolls into view, clear of the sticky rows', seen.inView && seen.scrolled, seen);
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

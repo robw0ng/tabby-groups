@@ -1463,6 +1463,7 @@ function install (injector) {
         if (dup) {
             // Tabby copies through the recovery token, which carries the group.
             delete dup.__tgRestore
+            delete dup.__tgRecovered
             if (tab.__tg && groups.has(tab.__tg)) {
                 setMembership(dup, tab.__tg)
             }
@@ -1538,6 +1539,9 @@ function install (injector) {
     }
     recovery.recoverTab = async function (token) {
         const params = await origRecover.call(this, token)
+        if (params) {
+            params.inputs.__tgRecovered = true
+        }
         if (params && Array.isArray(token.tabbyGroup)) {
             params.inputs.__tgRestore = token.tabbyGroup
             if (token.tabbyPinned) {
@@ -1897,6 +1901,32 @@ function install (injector) {
         queueRow(top(term))
     }
 
+    /*
+     * A new tab is scrolled into view in the side bar, once, after the redraws that file it (the tab opens, then joins its
+     * group). Tabby makes every new tab the active one as it opens it, so this follows the tab shown; one that is no longer
+     * active by then (another tab picked meanwhile) stays where it is. A folded group still shows its active tab's row, so
+     * that row is what shows, and the group stays folded. The sticky top row and the bottom buttons are kept clear of it.
+     */
+    function showFresh (tab) {
+        setTimeout(() => {
+            const bar = document.querySelector('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar')
+            const row = bar?.querySelectorAll(':scope > .tabs > tab-header')[app.tabs.indexOf(tab)]
+            if (disposed || !row?.offsetHeight || top(app.activeTab) !== tab) {
+                return
+            }
+            const r = row.getBoundingClientRect()
+            // The top row is the search, or in a narrow bar only Tabby's buttons: the lower edge of the two that show.
+            const tops = [':scope > .tg-toolbar', ':scope > .tabs + .btn-group'].map(q => bar.querySelector(q)).filter(e => e?.offsetHeight)
+            const above = Math.max(bar.getBoundingClientRect().top, ...tops.map(e => e.getBoundingClientRect().bottom))
+            const below = bar.querySelector(':scope > .btn-space + .btn-group')?.getBoundingClientRect().top ?? bar.getBoundingClientRect().bottom
+            if (r.top < above) {
+                bar.scrollTop -= above - r.top
+            } else if (r.bottom > below) {
+                bar.scrollTop += r.bottom - below
+            }
+        }, 150)
+    }
+
     const agentState = createAgent({ app, top, queueRender: tab => queueRow(tab), inspect, isDisposed: () => disposed })
     const { updateAgent, readAsking, setAsking, readCompacting, setCompacting, setBackground, markSeen } = agentState
     const onAgentEvent = e => inbox.onAgent(e.detail.tab)
@@ -2162,6 +2192,14 @@ function install (injector) {
             }, 500)
         }),
         app.tabOpened$.subscribe(watch),
+        // A new tab scrolls into view; a restored one (startup, a move from another window) does not.
+        app.tabOpened$.subscribe(tab => {
+            const recovered = tab.__tgRecovered
+            delete tab.__tgRecovered
+            if (!recovered) {
+                showFresh(top(tab))
+            }
+        }),
         app.tabOpened$.subscribe(tab => {
             const path = tab.__tgRestore
             if (!path) {
