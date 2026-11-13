@@ -1,5 +1,11 @@
 const { taskLabel } = require('./processes')
 
+/**
+ * Whether a Claude is blocked: frozen on a question menu or a permission prompt it cannot move past without the user.
+ * A question at the end of a turn's text (source "text") only waits: Claude is done, not stuck.
+ */
+const isBlocked = asking => !!asking && asking.source !== 'text'
+
 /** A Claude tab's state for the side bar and other front ends: busy, needs you, asking, compacting, background tasks. */
 function createAgent ({ app, top, queueRender, inspect, isDisposed }) {
     /*
@@ -120,7 +126,8 @@ function createAgent ({ app, top, queueRender, inspect, isDisposed }) {
     function syncAgent (t) {
         const panes = (t.getAllTabs?.() ?? [t]).map(p => p.__tgInfo?.agent).filter(Boolean)
         const busy = panes.filter(a => a.state === 'busy')
-        const asking = panes.find(a => a.asking)?.asking ?? null
+        // A blocked pane first: a pane only waiting on a text question must not hide it.
+        const asking = panes.find(a => isBlocked(a.asking))?.asking ?? panes.find(a => a.asking)?.asking ?? null
         const agent = panes.length ? {
             state: busy.length ? 'busy' : 'waiting',
             since: Math.max(...(busy.length ? busy : panes).map(a => a.since)),
@@ -151,4 +158,4 @@ function createAgent ({ app, top, queueRender, inspect, isDisposed }) {
     return { updateAgent, readAsking, setAsking, readCompacting, setCompacting, setBackground, markSeen, dispose }
 }
 
-module.exports = { createAgent }
+module.exports = { createAgent, isBlocked }

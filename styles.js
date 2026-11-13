@@ -26,7 +26,7 @@ const CSS = `
 .tabs.tg-light.tg-light .tg-count, .tabs.tg-light.tg-light .tg-arrow, .tabs.tg-light.tg-light .tg-pin, .tabs.tg-light.tg-light .tg-add,
 .tabs.tg-light.tg-light .tg-more, .tabs.tg-light.tg-light .tg-tab-pin { color: #333333; }
 .tabs.tg-light.tg-light .tg-roll { color: #1f5fbf; }
-.tabs.tg-light.tg-light .tg-roll-ask { color: #8a5300; }
+.tabs.tg-light.tg-light .tg-roll-ask, .tabs.tg-light.tg-light .tg-roll-blocked { color: #8a5300; }
 .tabs.tg-light.tg-light > tab-header .tg-cwd { color: #262626; }
 .tabs-on-left .tabs.tg-light.tg-light > tab-header > .name, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .name { color: #161616 !important; }
 .tabs-on-left .tabs.tg-light.tg-light > tab-header > .index, .tabs-on-right .tabs.tg-light.tg-light > tab-header > .index { color: #222222 !important; opacity: 1 !important; }
@@ -248,9 +248,19 @@ app-root > .window:has(> .tabs-on-left, > .tabs-on-right) { min-height: 0; }
     color: #111; font-size: 9px; font-weight: 800; line-height: 12px; text-align: center; box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d);
 }
 .tg-icon.tg-ask[data-ask="permission"]::before { content: '!'; }
+/* Blocked (a question menu or a permission prompt it cannot move past): the same badge with a slow, soft pulse in its ring. */
+.tg-icon.tg-ask.tg-blocked::before { animation: tg-blocked 2.4s ease-in-out infinite; }
+@keyframes tg-blocked {
+    0%, 100% { box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d), 0 0 0 2px rgba(245, 181, 74, 0); }
+    50% { box-shadow: 0 0 0 2px var(--tg-bg, #0d0d0d), 0 0 0 5px rgba(245, 181, 74, 0.45); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .tg-icon.tg-ask.tg-blocked::before { animation: none; }
+}
 .tabs > tab-header.tg-asking > .name { font-weight: 700; }
 .tabs > tab-header.tg-asking .tg-cwd { font-weight: normal; }
 .tg-roll-ask { color: #f5b54a; }
+.tg-roll-blocked { color: #f5b54a; font-weight: 700; }
 /* A Claude tab waiting on a background task: a green count at the icon's bottom-right. */
 .tg-icon > .tg-bgtask {
     position: absolute; bottom: -5px; right: -7px; min-width: 12px; height: 12px; padding: 0 2px; border-radius: 6px;

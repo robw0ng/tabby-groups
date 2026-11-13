@@ -6,7 +6,7 @@ const { COLORS, NO_COLOR, tintPct, shaded, ACTIVE_TINT_ADD, CSS } = require('./s
 const { resumeCommand } = require('./resume')
 const { SHELLS, APPS, CLAUDE_TITLE, shellOf, claudeSessionId, processList, osCwd, promptCwd, taskShells } = require('./processes')
 const { createButtons } = require('./buttons')
-const { createAgent } = require('./agent')
+const { createAgent, isBlocked } = require('./agent')
 const { createInbox } = require('./inbox')
 const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
@@ -458,6 +458,7 @@ function install (injector) {
             tabs: members(g.id).map(t => ({ title: titleOf(t), index: app.tabs.indexOf(t) })),
             needsYou: subtree(g.id).filter(t => t.__tgInfo?.agent?.needsYou).length,
             asking: subtree(g.id).filter(t => t.__tgInfo?.agent?.asking).length,
+            blocked: subtree(g.id).filter(t => isBlocked(t.__tgInfo?.agent?.asking)).length,
             running: subtree(g.id).filter(t => t.__tgInfo?.agent?.background).length,
             compacting: subtree(g.id).filter(t => t.__tgInfo?.agent?.compacting).length,
             busy: subtree(g.id).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length,
@@ -1109,7 +1110,12 @@ function install (injector) {
         const needs = subtree(g.id).filter(t => t.__tgInfo?.agent?.needsYou).length
         const busy = subtree(g.id).filter(t => t.__tgInfo?.agent?.state === 'busy' && !t.__tgInfo.agent.asking).length
         const roll = [needs && `${needs} ${needs === 1 ? 'needs' : 'need'} you`, busy && `${busy} busy`].filter(Boolean).join(' · ')
-        const asks = subtree(g.id).filter(t => t.__tgInfo?.agent?.asking).length
+        // Blocked (a question menu or a permission prompt) apart from asking (a question at the end of a turn's text).
+        const blocked = subtree(g.id).filter(t => isBlocked(t.__tgInfo?.agent?.asking)).length
+        if (blocked) {
+            countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-blocked', textContent: `${blocked} blocked` }))
+        }
+        const asks = subtree(g.id).filter(t => t.__tgInfo?.agent?.asking && !isBlocked(t.__tgInfo.agent.asking)).length
         if (asks) {
             countEl.append(' · ', Object.assign(document.createElement('span'), { className: 'tg-roll-ask', textContent: `${asks} asking` }))
         }
@@ -2054,6 +2060,7 @@ function install (injector) {
         iconEl?.classList.toggle('tg-busy', agent?.state === 'busy' && !asking)
         iconEl?.classList.toggle('tg-needs', !!agent?.needsYou && !asking)
         iconEl?.classList.toggle('tg-ask', !!asking)
+        iconEl?.classList.toggle('tg-blocked', isBlocked(agent?.asking))
         if (iconEl) {
             asking ? iconEl.dataset.ask = asking : delete iconEl.dataset.ask
         }

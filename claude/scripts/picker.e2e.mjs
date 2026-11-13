@@ -748,6 +748,34 @@ await sleep(300);
   check('a tab\'s own state change leaves the group headers in place; a tab change redraws them', rowsOnly.same && rowsOnly.redrawn, rowsOnly);
 }
 
+// Blocked (a permission prompt) pulses and counts as "blocked"; a question at the end of the text only waits ("asking").
+{
+  const blockedState = async (asking) => run(`async (asking) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const app = ${APP};
+    const tab = app.tabs.find(t => (t.customTitle || t.title) === 'o1');
+    const pane = tab.getAllTabs?.()[0] ?? tab;
+    pane.__tgInfo ??= {};
+    const was = pane.__tgInfo.agent;
+    pane.__tgInfo.agent = asking ? { state: 'waiting', since: 1, needsYou: false, asking } : was;
+    // The phones-viewing event redraws every row in place, as a status change does for its own row.
+    window.dispatchEvent(new CustomEvent('tabby-remote:presence'));
+    await sleep(300);
+    const row = document.querySelectorAll('.tab-bar .tabs > tab-header')[app.tabs.indexOf(tab)];
+    const icon = row.querySelector('.tg-icon');
+    const out = { blocked: !!icon?.classList.contains('tg-blocked'), pulse: icon ? getComputedStyle(icon, '::before').animationName : null,
+      roll: document.querySelector('.tg-header[data-name="outer"] .tg-count')?.textContent ?? '' };
+    pane.__tgInfo.agent = was;
+    window.dispatchEvent(new CustomEvent('tabby-remote:presence'));
+    await sleep(300);
+    return out;
+  }`, asking);
+  const perm = await blockedState({ kind: 'permission', since: 1 });
+  check('a permission prompt: the badge pulses and the group counts "1 blocked"', perm.blocked && perm.pulse === 'tg-blocked' && /1 blocked/.test(perm.roll) && !/asking/.test(perm.roll), perm);
+  const text = await blockedState({ kind: 'question', since: 1, source: 'text' });
+  check('a question in the text: no pulse, counted as "1 asking"', text.pulse !== null && !text.blocked && text.pulse !== 'tg-blocked' && /1 asking/.test(text.roll) && !/blocked/.test(text.roll), text);
+}
+
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
 await rightClick(p.tab);
 s = await state();

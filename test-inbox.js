@@ -1,5 +1,14 @@
-// node test-inbox.js: the inbox's choices (inbox.js) on fake panes, without Tabby.
+// node test-inbox.js: the inbox's choices (inbox.js) on fake panes, without Tabby; and which waits block (agent.js).
 const assert = require('assert')
+
+// Blocked: a question menu or a permission prompt; a question at the end of a turn's text only waits.
+{
+    const { isBlocked } = require('./agent')
+    assert.strictEqual(isBlocked({ kind: 'question', since: 1 }), true, 'a question menu blocks')
+    assert.strictEqual(isBlocked({ kind: 'permission', since: 1 }), true, 'a permission prompt blocks')
+    assert.strictEqual(isBlocked({ kind: 'question', since: 1, source: 'text' }), false, 'a question in the text only waits')
+    assert.strictEqual(isBlocked(null), false, 'nothing asked')
+}
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
