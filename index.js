@@ -2196,7 +2196,7 @@ function install (injector) {
         app.tabOpened$.subscribe(tab => {
             const recovered = tab.__tgRecovered
             delete tab.__tgRecovered
-            if (!recovered) {
+            if (!recovered && !backgroundOpens) {
                 showFresh(top(tab))
             }
         }),
@@ -2690,11 +2690,12 @@ function install (injector) {
     }
 
     /**
-     * Opens a local shell tab and files it in one call, for scripts driving Tabby over CDP.
+     * Opens a local shell tab and files it in one call, for scripts driving Tabby over CDP. `background`: the user stays
+     * on the tab they were on (the API's default; `focus: true` switches them).
      * @example await __tabbyGroups.open({ title: 'api', cwd: 'C:\\projects\\api', run: 'claude', group: 'api', parent: 'backend' })
      * @returns the new tab's 1-based number (plain JSON for returnByValue)
      */
-    async function open ({ title, profile, command, args, cwd, run, group, parent, color } = {}) {
+    async function open ({ title, profile, command, args, cwd, run, group, parent, color, background = false } = {}) {
         if (profile) {
             // A saved profile, in `cwd` when given (a pinned picker entry).
             profile = cwd ? { ...profile, options: { ...profile.options, cwd } } : profile
@@ -2703,10 +2704,24 @@ function install (injector) {
         }
         // First, so a name that fits several groups throws before a tab opens.
         const g = group ? groupFor(group, { ...parent !== undefined && { parent }, ...color !== undefined && { color } }) : null
-        const inner = await injector.get(core.ProfilesService).openNewTabForProfile(profile ?? {
-            type: 'local', name: title ?? command, options: { command, args, cwd, env: {} },
-        })
+        // Overlapping background opens all go back to the tab the user was on before the first of them.
+        if (background && !backgroundOpens) {
+            homeTab = app.activeTab
+        }
+        const was = background ? homeTab : null
+        backgroundOpens += background ? 1 : 0
+        let inner
+        try {
+            inner = await injector.get(core.ProfilesService).openNewTabForProfile(profile ?? {
+                type: 'local', name: title ?? command, options: { command, args, cwd, env: {} },
+            })
+        } finally {
+            backgroundOpens -= background ? 1 : 0
+        }
         const tab = app.getParentTab(inner) ?? inner
+        if (was) {
+            backToPrevious(tab, inner, was)
+        }
         if (title) {
             tab.setCustomTitle(title)
         }
@@ -2719,6 +2734,24 @@ function install (injector) {
             startupChecks(inner)
         }
         return app.tabs.indexOf(tab) + 1
+    }
+
+    /*
+     * A background open: Tabby makes every new tab the active one, and starts a terminal only once it has had focus (a
+     * restored tab waits until it is first shown). So the new tab stays shown until its terminal is ready, and then the
+     * user is back on the tab they were on, unless they picked another one meanwhile. Keys typed in that moment go to the
+     * new tab. A terminal not ready in 10 s keeps its tab shown: switching away then would leave it never started.
+     */
+    let backgroundOpens = 0
+    let homeTab = null
+    async function backToPrevious (tab, inner, was) {
+        const until = Date.now() + 10000
+        while (!inner.frontendIsReady && !inner.session && Date.now() < until && !disposed) {
+            await new Promise(r => setTimeout(r, 30))
+        }
+        if (!disposed && (inner.frontendIsReady || inner.session) && app.tabs.includes(was) && top(app.activeTab) === tab) {
+            app.selectTab(was)
+        }
     }
 
     /**
@@ -2854,6 +2887,8 @@ function install (injector) {
         return id ? f(id, ...rest) : false
     }
     const api = {
+        // Scripts and agents open in the background; `focus: true` (tabby.mjs --focus) switches the user to the tab.
+        open: (opts = {}) => open({ ...opts, background: opts.background ?? !opts.focus }),
         addTab: (tab, group, opts) => addTab(tab, groupFor(group, opts).id),
         setCollapsed: byRef(setCollapsed), setColor: byRef(setColor), setPinned: byRef(setPinned), rename: byRef(rename), ungroup: byRef(ungroup),
         deleteGroup: byRef(deleteGroup), closeGroup: byRef(closeGroup),
@@ -2862,7 +2897,7 @@ function install (injector) {
             return pid === null && parent != null && parent !== '' ? false : setParent(id, pid)
         }),
     }
-    window.__tabbyGroups = { version: 1, open, ...api, removeTab, setTabPinned, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
+    window.__tabbyGroups = { version: 1, ...api, removeTab, setTabPinned, list, drop, markSeen, icons, buttons: buttonBar.list, reload, dispose, tabText, say,
         // For tabby-remote's talk between computers; its presence also says this copy refuses non-Claude tabs there.
         sayToClaude: (name, text) => say(name, text, { claudeOnly: true }), tabOf,
         placeAfter, move, windows: () => windowsApi.windows().map(({ n, me }) => ({ n, me })),

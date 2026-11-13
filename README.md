@@ -65,7 +65,7 @@ Other tools can drive the groups through `window.__tabbyGroups` in Tabby's windo
 
 | Function | Does |
 | --- | --- |
-| `open({ title, command, args, cwd, run, group, parent, color })` | Opens a shell tab in a group and types `run` once the shell is ready. With `parent`, the group is the child of that name in the parent, made when missing (the parent too) |
+| `open({ title, command, args, cwd, run, group, parent, color, focus })` | Opens a shell tab in a group and types `run` once the shell is ready. In the background: the user stays on their tab (the new one shows for a moment, until its terminal starts, as Tabby starts a terminal only once it has had focus; keys typed then go to it); `focus: true` switches them to it. With `parent`, the group is the child of that name in the parent, made when missing (the parent too) |
 | `addTab(tab, group, { color, parent })` / `removeTab(tab)` | Puts a tab in a group, or takes it out |
 | `setCollapsed`, `setColor`, `setPinned`, `setParent`, `rename`, `ungroup` | Change a group |
 | `deleteGroup(name)` | Deletes an empty group and its (empty) subgroups. Returns false for a group with a tab under it. |

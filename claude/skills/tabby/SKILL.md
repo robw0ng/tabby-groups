@@ -30,6 +30,7 @@ node <plugin>/scripts/tabby.mjs open --group "<group>" --name "<tab title>" --di
 | Option | Use |
 | --- | --- |
 | `--run "<command>"` | Typed into the new shell once it is ready, for example `claude`, `claude --resume <name>` or `npm test`. Leave it out for a plain shell. |
+| `--focus` | Switches the user to the new tab. Without it the tab opens in the background and the user stays where they are. |
 | `--parent "<group>"` | Uses the subgroup called `--group` inside this group (a name or a path), made when missing; the parent is made too |
 | `--file <script>` | Runs a launch script once in a new shell (launchers use this). A `.ps1` script runs in PowerShell 7; any other script is sourced in the default profile's shell, for example zsh on macOS. |
 | `--app claude` | With `--file`: the app names its own tab |

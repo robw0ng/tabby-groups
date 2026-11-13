@@ -1,6 +1,7 @@
 // Drives Tabby's tab groups through its DevTools port (Tabby started with --remote-debugging-port=<port>).
 //   node tabby.mjs open --group <g> --name <n> --dir <folder> --file <launch.ps1|launch.sh> [--app claude|codex|shell] [--port 9222]
-//   node tabby.mjs open --group <g> --name <n> --dir <folder> [--run "<command>"] [--parent <p>] [--port 9222]
+//   node tabby.mjs open --group <g> --name <n> --dir <folder> [--run "<command>"] [--parent <p>] [--focus] [--port 9222]
+//   (opens in the background: the user stays on their tab; --focus switches them to the new one)
 //   node tabby.mjs list [--port 9222]
 //   node tabby.mjs move --tab <number|title> (--group <g> [--parent <p>] | --none) [--port 9222]
 //   node tabby.mjs move --tab <number|title> --window <n|new> [--port 9222]   (the running tab, with its group, to window n,
@@ -78,7 +79,7 @@ const open = async (app, profiles, groupOf, o) => {
   const tgOpen = async (opts) => {
     const before = new Set(app.tabs);
     try {
-      return await tg.open(opts);
+      return await tg.open({ ...opts, focus: !!o.focus });
     } catch (e) {
       for (const t of app.tabs.filter((t) => !before.has(t))) await app.closeTab(t, false);
       throw e;
@@ -164,7 +165,7 @@ const move = async (app, profiles, groupOf, o) => {
   return { tab: title(tab), group: tg.list().find((g) => g.id === tab.__tg)?.path ?? null, index: app.tabs.indexOf(tab) };
 };
 
-const input = { group: opt('group'), name: opt('name'), dir: opt('dir'), file: opt('file'), app: opt('app', 'shell'), run: opt('run'), parent: opt('parent'), tab: opt('tab'), none: flag('none'), window: opt('window') };
+const input = { group: opt('group'), name: opt('name'), dir: opt('dir'), file: opt('file'), app: opt('app', 'shell'), run: opt('run'), parent: opt('parent'), tab: opt('tab'), none: flag('none'), window: opt('window'), focus: flag('focus') };
 if (cmd === 'open' && (!input.group || !input.name)) { console.error('tabby: open needs --group and --name'); process.exit(1); }
 if (cmd === 'move' && (!input.tab || (!input.group && !input.none && !input.window))) { console.error('tabby: move needs --tab and --group, --none or --window'); process.exit(1); }
 const r = await evaluate(inTabby({ open, list, move }[cmd], input));

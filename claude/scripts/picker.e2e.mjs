@@ -73,6 +73,9 @@ for (let k = 0; k < 30; k++) {
   await sleep(500);
 }
 
+// Scripts' opens are background by default; these steps were written for opens that come to the front.
+await run(`() => { const tg = window.__tabbyGroups; const open = tg.open; tg.open = o => open({ focus: true, ...o }) }`);
+
 // Setup: a loose tab, then outer > inner with one tab each; the last row is in a group.
 await run(`async () => {
   const app = ${APP};
@@ -796,6 +799,33 @@ await sleep(300);
   }`);
   if (seen.skipped) console.log("note: the side bar did not scroll (few tabs), so the new-tab scroll check was skipped");
   else check('a new active tab scrolls into view, clear of the sticky rows', seen.inView && seen.scrolled, seen);
+}
+
+// Scripts open in the background: the user stays on their tab, the new one still starts its shell and command, and the
+// side bar does not scroll to it; focus: true switches the user.
+{
+  const bg = await run(`async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const app = ${APP};
+    const tg = window.__tabbyGroups;
+    const was = app.activeTab;
+    const bar = document.querySelector('.tabs-on-left > .tab-bar, .tabs-on-right > .tab-bar');
+    const scroll = bar.scrollTop;
+    await tg.open({ title: 'bg-open', run: 'echo bg-started', background: true });
+    await sleep(2500);
+    const tab = app.tabs.find(t => (t.customTitle || t.title) === 'bg-open');
+    const pane = tab.getAllTabs?.()[0] ?? tab;
+    const out = { stayed: app.activeTab === was, session: !!pane.session?.open, ran: (await tg.tabText('bg-open', 10) ?? '').includes('bg-started'), scrolled: bar.scrollTop !== scroll, canScroll: bar.scrollHeight > bar.clientHeight + 40 };
+    await app.closeTab(tab, false, true);
+    await tg.open({ title: 'fg-open', focus: true });
+    await sleep(800);
+    const fg = app.tabs.find(t => (t.customTitle || t.title) === 'fg-open');
+    out.focused = app.activeTab === fg;
+    await app.closeTab(fg, false, true);
+    return out;
+  }`);
+  check("a script's tab opens in the background: the user stays put, its shell starts and runs its command, no scroll", bg.stayed && bg.session && bg.ran && !(bg.canScroll && bg.scrolled), bg);
+  check('focus: true switches the user to the new tab', bg.focused, bg);
 }
 
 // Last: Tabby's tab menu is a native menu, which this script can neither see nor close.
