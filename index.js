@@ -1,4 +1,4 @@
-const { NgModule, Injector, ElementRef, ɵɵdefineComponent, ɵɵdirectiveInject } = require('@angular/core')
+const { NgModule, NgZone, Injector, ElementRef, ɵɵdefineComponent, ɵɵdirectiveInject } = require('@angular/core')
 const core = require('tabby-core')
 const ICONS = require('./icons')
 
@@ -20,6 +20,7 @@ function install (injector) {
     window.__tabbyGroups?.dispose()
 
     const app = injector.get(core.AppService)
+    const ngZone = injector.get(NgZone)
     const recovery = injector.get(core.TabRecoveryService)
     const menuProviders = injector.get(core.TabContextMenuItemProvider)
     // The sidebar gap, rounded to whole screen pixels: at 125% a 6px gap is 7.5px, and each nested band would round that half pixel its own way.
@@ -829,7 +830,8 @@ function install (injector) {
                 const el = Object.assign(document.createElement('button'), { className: 'btn btn-secondary btn-tab-bar tg-top-button', innerHTML: b.icon ?? '' })
                 el.dataset.tgTip = el.ariaLabel = b.title ?? ''
                 // The provider's latest button: a provider may hand out new objects with a new click.
-                el.addEventListener('click', () => topButtons[k]?.click?.())
+                // Back in Angular's zone: the observer below runs this outside it, and a click must update the page.
+                el.addEventListener('click', () => ngZone.run(() => topButtons[k]?.click?.()))
                 return el
             }))
         }
@@ -843,23 +845,25 @@ function install (injector) {
     const queueTopButtons = () => {
         if (!topQueued) {
             topQueued = true
-            requestAnimationFrame(() => {
+            ngZone.runOutsideAngular(() => requestAnimationFrame(() => {
                 topQueued = false
                 if (!disposed) {
                     mountTopButtons(!!document.querySelector('.tabs-on-left, .tabs-on-right'))
                 }
-            })
+            }))
         }
     }
     // Nodes added in the bar's rows, or a whole new bar; terminal output (inside tab-body) is skipped first, as it is most of it.
     const inToolbar = r => r.addedNodes.length && r.target.nodeType === 1 && !r.target.closest('tab-body') && (r.target.closest('.tab-bar')
         ? !r.target.closest('.tabs')
         : [...r.addedNodes].some(n => n.nodeType === 1 && (n.matches('.tab-bar') || n.querySelector('.tab-bar'))))
-    const topObserver = new MutationObserver(records => {
+    // Outside Angular's zone: in it, each callback runs Angular's change detection, and a page whose change detection
+    // touches the DOM (a new window, Settings > Hotkeys) fires the observer again: a loop that never lets the window paint.
+    const topObserver = ngZone.runOutsideAngular(() => new MutationObserver(records => {
         if (records.some(inToolbar)) {
             queueTopButtons()
         }
-    })
+    }))
     topObserver.observe(document.body, { childList: true, subtree: true })
     queueTopButtons()
 
