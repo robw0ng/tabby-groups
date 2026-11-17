@@ -98,4 +98,29 @@ function restorePath (groups, path) {
     return out
 }
 
-module.exports = { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath }
+/**
+ * A saved group layout matched to the open tabs: `saved` is [{ title, cwd, path, pinned }] (path as restorePath takes it),
+ * `open` is [{ title, cwd }]. A grouped entry takes the first free tab with its title and folder, else the first free
+ * tab with its folder. Returns [[openIndex, entry]].
+ * ponytail: tabs have no id that survives a restart without this plugin; tabs sharing a folder and renamed meanwhile can swap.
+ */
+function matchLayout (saved, open) {
+    const free = open.map(() => true)
+    const pairs = []
+    const entries = (Array.isArray(saved) ? saved : []).filter(e => Array.isArray(e?.path) && e.path.length)
+    const left = []
+    for (const e of entries) {
+        const i = open.findIndex((t, k) => free[k] && t.title === e.title && t.cwd === e.cwd)
+        i < 0 ? left.push(e) : (free[i] = false, pairs.push([i, e]))
+    }
+    for (const e of left.filter(x => x.cwd)) {
+        const i = open.findIndex((t, k) => free[k] && t.cwd === e.cwd)
+        if (i >= 0) {
+            free[i] = false
+            pairs.push([i, e])
+        }
+    }
+    return pairs.sort((a, b) => a[0] - b[0])
+}
+
+module.exports = { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath, matchLayout }

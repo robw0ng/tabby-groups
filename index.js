@@ -13,7 +13,7 @@ const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
 const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader } = require('./places')
-const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
+const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath, matchLayout } = require('./scope')
 const { findCode, smallMenu, groupMenu } = require('./tabmenu')
 
 function install (injector) {
@@ -1697,6 +1697,109 @@ function install (injector) {
         }
     }
 
+    /** Puts a tab in the group a saved path names (root first), with the path's folds and pins and the tab's own pin. */
+    function restoreInto (tab, path) {
+        const chain = restorePath(groups, path)
+        // Joining a group clears a local pin, so the restored one is put back afterwards.
+        const localPin = !!tab.__tgPinned
+        addTab(tab, chain.at(-1).id, { restore: true })
+        tab.__tgPinned = localPin
+        chain.forEach((g, k) => Object.assign(g, { collapsed: path[k].collapsed, pinned: !!path[k].pinned }))
+    }
+
+    /*
+     * The groups ride in Tabby's saved tabs, and Tabby saves those without them while this plugin is off. So the main
+     * window also keeps the layout in <Tabby settings folder>/tabby-groups-layout.json, and offers it back when the tabs come
+     * back with no group. It is written only once that offer is settled, so a start with no groups never overwrites it.
+     */
+    const layoutFile = require('path').join(injector.get(core.BOOTSTRAP_DATA).userPluginsPath, '..', 'tabby-groups-layout.json')
+    const layoutOf = tab => {
+        const pane = tab.getAllTabs?.()[0] ?? tab
+        return { title: titleOf(tab) ?? '', cwd: pane.__tgInfo?.cwd ?? pane.profile?.options?.cwd ?? '' }
+    }
+    // Off until the startup offer is settled, so a start with no groups is not saved over the backup first.
+    let layoutReady = false
+    let layoutTimer = null
+    function saveLayout () {
+        layoutTimer = null
+        if (disposed || !isMain || !layoutReady || !recovery.enabled) {
+            return
+        }
+        const tabs = app.tabs.map(t => ({
+            ...layoutOf(t), pinned: !!t.__tgPinned,
+            path: chainOf(t.__tg).map(g => ({ id: g.id, name: g.name, color: g.color, collapsed: g.collapsed, pinned: g.pinned })),
+        }))
+        try {
+            require('fs').writeFileSync(layoutFile, JSON.stringify({ at: Date.now(), tabs }))
+        } catch (e) {
+            console.warn('tabby-groups: no layout backup', e.message)
+        }
+    }
+    function queueSaveLayout () {
+        clearTimeout(layoutTimer)
+        layoutTimer = setTimeout(saveLayout, 2000)
+    }
+    async function offerLayout () {
+        // Tabby turns recovery on in the main window once its startup restore is done.
+        if (!isMain || !await untilTrue(() => recovery.enabled, 120000)) {
+            return
+        }
+        await wait(3000)
+        // A reload while an older copy asks: its answer comes over in window.__tgLayoutAnswer (true: restore).
+        await untilTrue(() => !window.__tgLayoutAsking, 3600000)
+        // Left for the next copy when this one was reloaded meanwhile too.
+        const handed = disposed ? undefined : window.__tgLayoutAnswer
+        if (!disposed) {
+            delete window.__tgLayoutAnswer
+        }
+        try {
+            if (disposed || app.tabs.some(t => t.__tg) || handed === false) {
+                return
+            }
+            // The folder each tab reports (the backup's); Tabby's own guess from the output can be any path printed.
+            await untilTrue(() => app.tabs.every(t => (t.getAllTabs?.()[0] ?? t).__tgInfo?.cwd), 15000)
+            let saved
+            try {
+                saved = JSON.parse(require('fs').readFileSync(layoutFile, 'utf8'))
+            } catch {
+                return
+            }
+            const tabs = [...app.tabs]
+            const pairs = matchLayout(saved?.tabs, tabs.map(layoutOf)).map(([i, e]) => [tabs[i], e])
+            if (disposed || !pairs.length) {
+                return
+            }
+            let restore = handed === true
+            if (!restore) {
+                window.__tgLayoutAsking = true
+                try {
+                    const { response } = await injector.get(core.PlatformService).showMessageBox({
+                        type: 'question', buttons: ['Restore', 'Do not restore'], defaultId: 0, cancelId: 1,
+                        message: `Restore tab groups? ${pairs.length} of these tabs were in groups when Tabby last saved them (${new Date(saved.at).toLocaleString()}).`,
+                    })
+                    restore = response === 0
+                    // Reloaded meanwhile: the new copy acts on the answer.
+                    if (disposed) {
+                        window.__tgLayoutAnswer = restore
+                    }
+                } finally {
+                    delete window.__tgLayoutAsking
+                }
+            }
+            if (!restore || disposed) {
+                return
+            }
+            for (const [tab, e] of pairs.filter(([t]) => app.tabs.includes(t) && !t.__tg)) {
+                tab.__tgPinned = !!e.pinned
+                restoreInto(tab, e.path)
+            }
+            changed()
+        } finally {
+            layoutReady = !disposed
+        }
+    }
+    offerLayout()
+
     /*
      * The user's own icons: <Tabby settings folder>/tabby-groups.json, { "icons": [{ "name", "title"?, "process"?, "color"?,
      * "emoji" | "path" | "paths", "stroke"? }] }. "title" is a pattern for the tab title, "process" one for a command line
@@ -2226,14 +2329,10 @@ function install (injector) {
                 return
             }
             delete tab.__tgRestore
-            const chain = restorePath(groups, path)
-            // Joining a group clears a local pin, so the restored one is put back afterwards.
-            const localPin = !!tab.__tgPinned
-            addTab(tab, chain.at(-1).id, { restore: true })
-            tab.__tgPinned = localPin
-            chain.forEach((g, k) => Object.assign(g, { collapsed: path[k].collapsed, pinned: !!path[k].pinned }))
+            restoreInto(tab, path)
         }),
         app.tabsChanged$.subscribe(() => {
+            queueSaveLayout()
             normalize()
             // Not between the moves of a regather, whose half-done order would give empty groups the wrong neighbours.
             if (!normalizing) {
@@ -2640,6 +2739,11 @@ function install (injector) {
     function dispose () {
         if (disposed) {
             return
+        }
+        // A change still waiting to be saved: saved now, or a reload would offer the layout from before it.
+        if (layoutTimer) {
+            clearTimeout(layoutTimer)
+            saveLayout()
         }
         disposed = true
         cancelTabRename?.()

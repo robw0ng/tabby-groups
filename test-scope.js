@@ -2,7 +2,7 @@
 // by name (scope.js), with no Tabby. TG_REAL_STATE=<file> also migrates a copy of real saved state (see the end).
 const assert = require('assert')
 const fs = require('fs')
-const { uniqueName, pathOf, resolve, loadSaved, restorePath, childNamed } = require('./scope')
+const { uniqueName, pathOf, resolve, loadSaved, restorePath, childNamed, matchLayout } = require('./scope')
 
 const mk = (...gs) => new Map(gs.map(g => [g.id, { parent: null, color: null, ...g }]))
 
@@ -58,6 +58,23 @@ const a = restorePath(groups, [{ name: 'tooling' }, { name: 'owners' }]).at(-1)
 const b = restorePath(groups, [{ name: 'web' }, { name: 'owners' }]).at(-1)
 assert.notStrictEqual(a.id, b.id)
 assert.strictEqual(childNamed(groups, a.parent, 'owners'), a)
+
+// The layout backup: title and folder first, then folder alone; ungrouped entries and taken tabs are skipped.
+{
+    const p = [{ name: 'g' }]
+    const saved = [
+        { title: 'api', cwd: 'C:/a', path: p },
+        { title: 'loose', cwd: 'C:/b', path: [] },
+        { title: 'old title', cwd: 'C:/c', path: p, pinned: true },
+        { title: 'gone', cwd: 'C:/x', path: p },
+        { title: 'api', cwd: 'C:/a', path: p },
+    ]
+    const open = [{ title: 'new title', cwd: 'C:/c' }, { title: 'api', cwd: 'C:/a' }, { title: 'loose', cwd: 'C:/b' }, { title: 'api', cwd: 'C:/a' }]
+    const pairs = matchLayout(saved, open)
+    assert.deepStrictEqual(pairs.map(([i, e]) => [i, e.title]), [[0, 'old title'], [1, 'api'], [3, 'api']])
+    assert.deepStrictEqual(matchLayout(null, open), [], 'no backup')
+    assert.deepStrictEqual(matchLayout([{ title: 't', cwd: '', path: p }], [{ title: 'u', cwd: '' }]), [], 'no folder: title only')
+}
 
 // TG_REAL_STATE: a read-only copy of a Tabby's saved groups, as { emptyGroups, paths: [token.tabbyGroup | null],
 // live: list() before the migration }. Every group, parent link, colour, pin and member must come through.
