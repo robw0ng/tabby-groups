@@ -431,12 +431,12 @@ const menu = await run(`async () => {
   }
   return out;
 }`);
-const menuOrder = ['Open in', '—', 'Add to group', 'Rename', 'Pin', 'Duplicate', 'Copy path', '—', 'Move to window', 'Close group', '—', 'More options…'];
+const menuOrder = ['Open in', '—', 'Move to group', 'Rename', 'Pin', 'Duplicate', 'Copy path', '—', 'Group: menug', '—', 'Move to window', 'Close', '—', 'More options…'];
 check('a tab\'s right-click menu is the small one, in order', JSON.stringify(menu.small ?? []) === JSON.stringify(menuOrder), menu.small);
 check('Open in offers Explorer or Finder (Tabby Files and VS Code when there)', (menu.openIn ?? []).includes(process.platform === 'darwin' ? 'Finder' : 'Explorer'), menu.openIn);
 check('Pin pins the tab (the item then reads Unpin)', menu.pinnedNow, menu);
 check('Duplicate puts the copy right after the tab, in its group', menu.dup?.right && menu.dup?.sameGroup, menu);
-check('More options… holds Tabby\'s full menu (Duplicate, Close, the plugin\'s own items)', ['Duplicate', 'Close', 'Add to group', 'Move to window'].every((l) => menu.more?.includes(l)), menu);
+check('More options… holds Tabby\'s full menu (Duplicate, Close, the plugin\'s own items)', ['Duplicate', 'Close', 'Move to group', 'Move to window'].every((l) => menu.more?.includes(l)), menu);
 
 // After the active tab closes: the most recent tab of its group shows, else the most recent tab anywhere.
 const focus = await run(`async () => {

@@ -14,7 +14,7 @@ const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
 const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath } = require('./scope')
-const { findCode, smallMenu } = require('./tabmenu')
+const { findCode, smallMenu, groupMenu } = require('./tabmenu')
 
 function install (injector) {
     window.__tabbyGroups?.dispose()
@@ -549,43 +549,58 @@ function install (injector) {
     }
     const sep = () => Object.assign(document.createElement('div'), { className: 'tg-sep' })
 
-    function fillMainMenu (g) {
-        menuEl.replaceChildren()
-        const swatches = document.createElement('div')
-        swatches.className = 'tg-swatches'
-        for (const c of [{ name: 'No color', value: null }, ...COLORS]) {
-            const b = document.createElement('button')
-            b.className = 'tg-swatch' + (c.value ? '' : ' tg-none') + (g.color === c.value ? ' tg-on' : '')
-            b.style.background = c.value ?? ''
-            b.title = c.name
-            b.addEventListener('click', () => {
-                closeMenu()
-                setColor(g.id, c.value)
-            })
-            swatches.append(b)
-        }
-        const moveTargets = tree().filter(t => t.g !== g && !chainOf(t.g.id).includes(g))
-        const move = Object.assign(document.createElement('div'), { className: 'tg-item', textContent: 'Move into…' })
-        move.addEventListener('click', () => fillMoveMenu(g, moveTargets))
-        menuEl.append(
-            swatches,
-            sep(),
-            menuItem('Rename', () => startRename(g)),
-            menuItem(shut(g) ? 'Expand' : 'Collapse', () => setCollapsed(g.id, !shut(g))),
-            menuItem(g.pinned ? 'Unpin group' : 'Pin group', () => setPinned(g.id, !g.pinned)),
-            ...g.parent || moveTargets.length ? [move] : [],
-            sep(),
-            menuItem(g.parent ? 'Ungroup (move up a level)' : 'Ungroup', () => ungroup(g.id)),
-            subtree(g.id).length ? menuItem('Close group', () => closeGroup(g.id)) : menuItem('Delete group', () => deleteGroup(g.id)),
-        )
+    // A group's menu (tabmenu.js groupMenu), in Tabby's menu format: the header draws it, the tab menu nests it.
+    function groupMenuOf (g) {
+        return groupMenu({
+            color: g.color, colors: COLORS, shut: shut(g), pinned: g.pinned, parent: g.parent,
+            targets: tree().filter(t => t.g !== g && !chainOf(t.g.id).includes(g)).map(t => ({ id: t.g.id, label: ' '.repeat(t.depth) + t.g.name })),
+            hasTabs: subtree(g.id).length > 0,
+        }, {
+            color: value => setColor(g.id, value),
+            // ponytail: a tick later, so the tab menu (a native menu) has closed and handed the focus back first.
+            rename: () => setTimeout(() => startRename(g)),
+            collapse: () => setCollapsed(g.id, !shut(g)),
+            pin: () => setPinned(g.id, !g.pinned),
+            moveInto: id => setParent(g.id, id),
+            ungroup: () => ungroup(g.id),
+            close: () => closeGroup(g.id),
+            remove: () => deleteGroup(g.id),
+        })
     }
 
-    function fillMoveMenu (g, targets) {
-        menuEl.replaceChildren(
-            Object.assign(document.createElement('div'), { className: 'tg-label', textContent: `Move "${g.name}" into` }),
-            menuItem('Top level', () => setParent(g.id, null), !g.parent),
-            ...targets.map(t => menuItem(' '.repeat(t.depth) + t.g.name, () => setParent(g.id, t.g.id), g.parent === t.g.id)),
-        )
+    // The header's popover: the colours as swatches, "Move group into" as a second page.
+    function fillMainMenu (g) {
+        menuEl.replaceChildren(...groupMenuOf(g).map(i => {
+            if (i.type === 'separator') {
+                return sep()
+            }
+            if (i.label === 'Color') {
+                const swatches = document.createElement('div')
+                swatches.className = 'tg-swatches'
+                for (const [k, c] of i.submenu.entries()) {
+                    const value = k ? COLORS[k - 1].value : null
+                    const b = document.createElement('button')
+                    b.className = 'tg-swatch' + (value ? '' : ' tg-none') + (c.checked ? ' tg-on' : '')
+                    b.style.background = value ?? ''
+                    b.title = c.label
+                    b.addEventListener('click', () => {
+                        closeMenu()
+                        c.click()
+                    })
+                    swatches.append(b)
+                }
+                return swatches
+            }
+            if (i.submenu) {
+                const move = Object.assign(document.createElement('div'), { className: 'tg-item', textContent: `${i.label}…` })
+                move.addEventListener('click', () => menuEl.replaceChildren(
+                    Object.assign(document.createElement('div'), { className: 'tg-label', textContent: `Move "${g.name}" into` }),
+                    ...i.submenu.map(t => menuItem(t.label, t.click, t.checked)),
+                ))
+                return move
+            }
+            return menuItem(i.label, i.click)
+        }))
     }
 
     const menuProvider = {
@@ -595,29 +610,29 @@ function install (injector) {
                 return []
             }
             tab = top(tab)
-            return [
-                addToGroupMenu(tab),
-                ...tab.__tg ? [
-                    { label: `New subgroup of ${groups.get(tab.__tg)?.name}`, click: () => addTab(tab, createGroup(newGroupName(), tab.__tg).id) },
-                    { label: 'Remove from group', click: () => removeTab(tab) },
-                ] : [],
-                moveToWindowMenu(tab),
-            ]
+            return [toGroupMenu(tab), moveToWindowMenu(tab)]
         },
     }
     menuProviders.push(menuProvider)
-    function addToGroupMenu (tab) {
+    // "Add to group", or "Move to group" with "No group" for a tab in one.
+    function toGroupMenu (tab) {
         const groupsTree = tree()
         return {
-            label: 'Add to group',
+            label: tab.__tg ? 'Move to group' : 'Add to group',
             submenu: [
                 ...groupsTree.map(({ g, depth }) => ({
                     label: ' '.repeat(depth) + g.name, type: 'radio', checked: tab.__tg === g.id, click: () => tab.__tg !== g.id && addTab(tab, g.id),
                 })),
                 ...groupsTree.length ? [{ type: 'separator' }] : [],
                 { label: 'New group', click: () => addTab(tab, createGroup(newGroupName(), null).id) },
+                ...tab.__tg ? [{ label: 'No group', click: () => removeTab(tab) }] : [],
             ],
         }
+    }
+    // The tab's group's own menu, as the header has it.
+    function tabGroupMenu (tab) {
+        const g = groups.get(tab.__tg)
+        return g ? { label: `Group: ${g.name}`, submenu: groupMenuOf(g) } : null
     }
     function moveToWindowMenu (tab) {
         const moveTo = async to => moveFailed(await windowsApi.move(tab, to))
@@ -1776,8 +1791,8 @@ function install (injector) {
             return smallMenu({
                 cwd, files: !!window.__tabbyFiles?.open, code: !!codeExe,
                 manager: { darwin: 'Finder', win32: 'Explorer' }[process.platform] ?? 'File manager',
-                pinned: tab.__tg ? !!tab.__tgPinned : !!tab.pinned, grouped: !!tab.__tg,
-                addToGroup: addToGroupMenu(tab), moveToWindow: moveToWindowMenu(tab), more: full,
+                pinned: tab.__tg ? !!tab.__tgPinned : !!tab.pinned, closable: !tab.effectivelyPinned,
+                toGroup: toGroupMenu(tab), group: tabGroupMenu(tab), moveToWindow: moveToWindowMenu(tab), more: full,
             }, {
                 // A Files tab in that folder, right after this tab and in its group (tabby-files places it with placeAfter).
                 files: dir => window.__tabbyFiles?.open(dir, tab),
@@ -1796,7 +1811,8 @@ function install (injector) {
                 // The same profile and folder: Tabby's duplicate, which this plugin files in the tab's group, right after it.
                 duplicate: () => app.duplicateTab(tab),
                 copy: text => platform.setClipboard({ text }),
-                closeGroup: () => closeGroup(tab.__tg),
+                // Just this tab, through Tabby's close (it asks when a command runs).
+                close: () => app.closeTab(tab, true),
             })
         }
     }
