@@ -12,7 +12,7 @@ const { createTooltip } = require('./tooltip')
 const { renderSettings } = require('./settings')
 const { createWindows } = require('./windows')
 const { pickerItems, showPicker } = require('./picker')
-const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader } = require('./places')
+const { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader, emptyDrop, placeInOrder } = require('./places')
 const { newId, childNamed, uniqueName, pathOf, resolve, loadSaved, restorePath, matchLayout } = require('./scope')
 const { findCode, smallMenu, groupMenu } = require('./tabmenu')
 
@@ -341,7 +341,8 @@ function install (injector) {
         // With their ancestors, so an empty subgroup keeps its parent even when the parent's tabs do not come back.
         const keep = new Set([...groups.values()].filter(g => !subtree(g.id).length).flatMap(g => chainOf(g.id)))
         try {
-            localStorage.setItem(EMPTY_KEY, JSON.stringify([...keep]))
+            // In the Map's order, which orders the empty groups that share a slot (places.js placeInOrder).
+            localStorage.setItem(EMPTY_KEY, JSON.stringify([...groups.values()].filter(g => keep.has(g))))
         } catch { }
     }
 
@@ -2686,6 +2687,19 @@ function install (injector) {
 
     function applyGroupDrop (g, i) {
         const ms = orderedSubtree(g)
+        // An empty group has no tab to move: its slot and its order among the empty groups there place it (places.js).
+        if (!ms.length) {
+            const d = emptyDrop(app.tabs, groups, g, i)
+            if (!setParent(g.id, d.parent, false)) {
+                return
+            }
+            g.slot = d.slot
+            marks.delete(g)
+            placeInOrder(groups, g, d.order)
+            chainOf(d.parent).forEach(a => { a.collapsed = false })
+            changed()
+            return
+        }
         let parent, anchor, after
         if (i.tab) {
             [parent, anchor, after] = [i.tab.__tg ?? null, i.tab, i.where !== 'before']

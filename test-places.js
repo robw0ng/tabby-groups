@@ -1,6 +1,6 @@
 // node test-places.js: checks where empty groups sit (places.js), with no Tabby. On screen: picker.e2e.mjs.
 const assert = require('assert')
-const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose, dropIndex, atOwnHeader } = require('./places')
+const { unitsOf, emptyIndex, groupOrder, trackSlots, focusAfterClose, dropIndex, atOwnHeader, emptyDrop, placeInOrder } = require('./places')
 
 const tab = (name, group) => ({ name, __tg: group })
 const mk = (...gs) => new Map(gs.map(g => [g.name, { parent: null, id: g.name, ...g }]))
@@ -88,5 +88,54 @@ assert.strictEqual(atOwnHeader({ header: true, group: 'G' }, 'G'), true, 'the gr
 assert.strictEqual(atOwnHeader({ header: true, group: 'P' }, 'G'), false, "a parent's header between: taking G out of P is a real move")
 assert.strictEqual(atOwnHeader({ header: false, group: 'H' }, 'G'), false, "a sibling's footer between: a real move")
 assert.strictEqual(atOwnHeader(null, 'G'), false, 'the last row: a real move')
+
+// An empty group dropped somewhere: emptyDrop's slot and order, applied as the plugin does (placeInOrder, its marks
+// dropped, then trackSlots), show it at the drop line. Top level: a, G (g1, g2), b. Empty X before a, Y before G, Z at
+// the end, and I inside G.
+{
+    const a = tab('a'), g1 = tab('g1', 'G'), g2 = tab('g2', 'G'), b = tab('b')
+    const tabs = [a, g1, g2, b]
+    const fresh = () => mk({ name: 'X', slot: 0 }, { name: 'G' }, { name: 'Y', slot: 1 }, { name: 'Z', slot: 3 }, { name: 'I', parent: 'G', slot: 0 })
+    const order = (gs, panel = null) => names(groupOrder(tabs, gs, panel))
+    const dropAt = (name, i) => {
+        const gs = fresh()
+        const g = gs.get(name)
+        const d = emptyDrop(tabs, gs, g, typeof i === 'function' ? i(gs) : i)
+        g.parent = d.parent
+        g.slot = d.slot
+        placeInOrder(gs, g, d.order)
+        trackSlots(tabs, gs, new Map())
+        return gs
+    }
+    assert.deepStrictEqual(order(fresh()), ['X', 'Y', 'G', 'I', 'Z'])
+    // Same parent, another place: the bug was that nothing moved.
+    let gs = dropAt('Z', { tab: a, where: 'after' })
+    assert.deepStrictEqual([gs.get('Z').slot, order(gs)], [1, ['X', 'Z', 'Y', 'G', 'I']], 'after a: first at its slot, above Y')
+    gs = dropAt('X', { tab: b, where: 'before' })
+    assert.deepStrictEqual([gs.get('X').slot, order(gs)], [2, ['Y', 'G', 'I', 'X', 'Z']], 'before b')
+    // Beside another empty group: its slot, just above or below it.
+    gs = dropAt('Z', g => ({ group: g.get('X'), where: 'above' }))
+    assert.deepStrictEqual([gs.get('Z').slot, order(gs)], [0, ['Z', 'X', 'Y', 'G', 'I']], 'above X')
+    gs = dropAt('Z', g => ({ group: g.get('X'), where: 'below' }))
+    assert.deepStrictEqual([gs.get('Z').slot, order(gs)], [0, ['X', 'Z', 'Y', 'G', 'I']], 'below X')
+    // Beside a group with tabs: just above it (after the empties at its slot), or just below it.
+    gs = dropAt('X', g => ({ group: g.get('G'), where: 'above' }))
+    assert.deepStrictEqual([gs.get('X').slot, order(gs)], [1, ['Y', 'X', 'G', 'I', 'Z']], 'above G')
+    gs = dropAt('Z', g => ({ group: g.get('G'), where: 'below' }))
+    assert.deepStrictEqual([gs.get('Z').slot, order(gs)], [2, ['X', 'Y', 'G', 'I', 'Z']], 'below G')
+    // Inside a group, first or last.
+    gs = dropAt('X', g => ({ group: g.get('G'), where: 'first' }))
+    assert.deepStrictEqual([gs.get('X').parent, gs.get('X').slot, order(gs, 'G')], ['G', 0, ['X', 'I']], 'first in G')
+    gs = dropAt('X', g => ({ group: g.get('G'), where: 'last' }))
+    assert.deepStrictEqual([gs.get('X').parent, gs.get('X').slot, order(gs, 'G')], ['G', 2, ['I', 'X']], 'last in G')
+    // The free space below the rows: the end, above the empty groups already there.
+    gs = dropAt('X', { where: 'end' })
+    assert.deepStrictEqual([gs.get('X').slot, order(gs)], [3, ['Y', 'G', 'I', 'X', 'Z']], 'end')
+    // Out of its group, after a tab at the top level.
+    gs = dropAt('I', { tab: b, where: 'after' })
+    assert.deepStrictEqual([gs.get('I').parent, gs.get('I').slot, order(gs)], [null, 3, ['X', 'Y', 'G', 'I', 'Z']], 'out of G, after b')
+    // The groups Map keeps every group, keyed by id.
+    assert.deepStrictEqual([...gs.keys()].sort(), ['G', 'I', 'X', 'Y', 'Z'])
+}
 
 console.log('test-places: all passed')

@@ -154,4 +154,45 @@ function dropIndex (from, anchor, after) {
  */
 const atOwnHeader = (next, id) => !!next?.header && next.group === id
 
-module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader }
+/**
+ * Where an empty group `g` dropped at `i` sits: its parent, its slot, and its order among the empty groups shown at that
+ * slot (they show in the groups Map's order): 'first', 'last', or ['before' | 'after', an empty sibling]. `i` is
+ * { tab, where: 'before' | 'after' }, { where: 'end' } (the free space below the rows: above the empty groups there),
+ * or { group, where: 'above' | 'below' | 'first' | 'last' }.
+ */
+function emptyDrop (tabs, groups, g, i) {
+    const unitAt = (panel, unit) => unitsOf(tabs, groups, panel).findIndex(u => u.unit === unit)
+    if (i.tab) {
+        const parent = i.tab.__tg ?? null
+        const k = unitAt(parent, i.tab)
+        const after = i.where !== 'before'
+        return { parent, slot: k < 0 ? null : k + (after ? 1 : 0), order: after ? 'first' : 'last' }
+    }
+    if (i.where === 'end') {
+        return { parent: null, slot: unitsOf(tabs, groups, null).length, order: 'first' }
+    }
+    const G = i.group
+    if (i.where === 'first' || i.where === 'last') {
+        return i.where === 'first'
+            ? { parent: G.id, slot: 0, order: 'first' }
+            : { parent: G.id, slot: unitsOf(tabs, groups, G.id).length, order: 'last' }
+    }
+    const parent = panelOf(groups, G)
+    const k = unitAt(parent, G)
+    const below = i.where === 'below'
+    // Beside an empty group: the same slot, just before or after it.
+    return k < 0
+        ? { parent, slot: G.slot ?? null, order: [below ? 'after' : 'before', G] }
+        : { parent, slot: k + (below ? 1 : 0), order: below ? 'first' : 'last' }
+}
+
+/** Moves `g` in the groups Map: to its start or end, or just before or after another group (emptyDrop's `order`). */
+function placeInOrder (groups, g, order) {
+    const rest = [...groups.values()].filter(x => x !== g)
+    const k = order === 'first' ? 0 : order === 'last' ? rest.length : rest.indexOf(order[1]) + (order[0] === 'after' ? 1 : 0)
+    rest.splice(k, 0, g)
+    groups.clear()
+    rest.forEach(x => groups.set(x.id, x))
+}
+
+module.exports = { chainIn, panelOf, unitsOf, emptyIndex, groupOrder, trackSlots, follow, focusAfterClose, dropIndex, atOwnHeader, emptyDrop, placeInOrder }
